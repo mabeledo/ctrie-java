@@ -19,35 +19,12 @@
 
 package io.github.mabeledo.ctrie;
 
-import javax.validation.constraints.NotNull;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
 
-class TNode<K, V> extends MainNode<K, V> {
-    private final K key;
-    private final V value;
-    private final int hashCode;
-
-    TNode(@NotNull K key, V value, int hashCode) {
-        this.key = key;
-        this.value = value;
-        this.hashCode = hashCode;
-    }
-
-    TNode(@NotNull SNode<K, V> sNode) {
-        this.key = sNode.getKey();
-        this.value = sNode.getValue();
-        this.hashCode = sNode.getHashCode();
-    }
-
-    @NotNull
-    K getKey() {
-        return this.key;
-    }
-
-    V getValue() {
-        return this.value;
-    }
-
-    int getHashCode() {
-        return this.hashCode;
-    }
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.METHOD)
+public @interface TailRecursive {
 }

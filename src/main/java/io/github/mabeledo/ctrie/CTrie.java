@@ -19,6 +19,8 @@
 
 package io.github.mabeledo.ctrie;
 
+import io.github.mabeledo.ctrie.exceptions.CTrieIteratorException;
+
 import javax.validation.constraints.NotNull;
 import java.util.Iterator;
 import java.util.Objects;
@@ -116,6 +118,15 @@ public class CTrie<K, V> implements Iterable<Node<K, V>> {
     }
 
     /**
+     *
+     * @param key
+     * @return
+     */
+    public V remove(@NotNull K key) {
+        return null;
+    }
+
+    /**
      * @return
      */
     public int size() {
@@ -142,6 +153,7 @@ public class CTrie<K, V> implements Iterable<Node<K, V>> {
      * @param readOnly
      * @return
      */
+    @TailRecursive
     private TailCall<CTrie<K, V>> recursiveSnapshot(boolean readOnly) {
         INode<K, V> root = this.rdcssReadRoot();
         MainNode<K, V> rootMainNode = root.genCaSRead(this);
@@ -159,8 +171,17 @@ public class CTrie<K, V> implements Iterable<Node<K, V>> {
     /**
      * @return
      */
+    @Override
     public Iterator<Node<K, V>> iterator() {
-        return null;
+        if (!this.isReadOnly()) {
+            return this.snapshot(true).iterator();
+        }
+
+        try {
+            return new CTrieIterator<>(this);
+        } catch (CTrieIteratorException cti) {
+            return CTrieIterator.empty();
+        }
     }
 
     /**
@@ -169,7 +190,6 @@ public class CTrie<K, V> implements Iterable<Node<K, V>> {
     Boolean isReadOnly() {
         return this.readOnly.get();
     }
-
 
     // RDCSS methods.
     // From Harris, Fraser, Pratt A practical multi-word compare-and-swap operation.

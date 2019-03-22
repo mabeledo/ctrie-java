@@ -19,36 +19,43 @@
 
 package io.github.mabeledo.ctrie;
 
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.stream.Collectors;
 
-class LNode<K, V> extends MainNode<K, V> {
+/**
+ * Leaf node.
+ *
+ * @param <K>
+ * @param <V>
+ */
+class LeafNode<K, V> extends MainNode<K, V> {
     private final Map<K, V> collisionMap;
 
-    private LNode() {
+    private LeafNode() {
         super();
         this.collisionMap = new LinkedHashMap<>();
     }
 
-    LNode(K key, V value) {
+    LeafNode(K key, V value) {
         this();
         this.collisionMap.put(key, value);
     }
 
-    LNode(K firstKey, V firstValue, K secondKey, V secondValue) {
+    LeafNode(K firstKey, V firstValue, K secondKey, V secondValue) {
         this();
         this.collisionMap.put(firstKey, firstValue);
         this.collisionMap.put(secondKey, secondValue);
     }
 
-    LNode(Map<K, V> collisionMap, K key, V value) {
+    LeafNode(Map<K, V> collisionMap, K key, V value) {
         super();
         this.collisionMap = collisionMap;
         this.collisionMap.put(key, value);
     }
 
     /**
-     *
      * @param key
      * @return
      */
@@ -59,12 +66,21 @@ class LNode<K, V> extends MainNode<K, V> {
     }
 
     /**
-     *
      * @param key
      * @param value
      * @return
      */
-    LNode<K, V> insert(K key, V value) {
-        return new LNode<>(this.collisionMap, key, value);
+    LeafNode<K, V> insert(K key, V value) {
+        return new LeafNode<>(this.collisionMap, key, value);
+    }
+
+    /**
+     * @return
+     */
+    Iterator<Node<K, V>> iterator() {
+        return
+                this.collisionMap.entrySet().stream()
+                        .map(p -> (Node<K, V>) new TombNode<>(p.getKey(), p.getValue(), p.getKey().hashCode()))
+                        .iterator();
     }
 }

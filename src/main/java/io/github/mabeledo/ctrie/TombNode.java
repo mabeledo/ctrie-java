@@ -21,23 +21,24 @@ package io.github.mabeledo.ctrie;
 
 import javax.validation.constraints.NotNull;
 
-class SNode<K, V> implements Node<K, V> {
+class TombNode<K, V> extends MainNode<K, V> {
     private final K key;
     private final V value;
     private final int hashCode;
 
-    SNode(@NotNull K key, V value, int hashCode) {
+    TombNode(@NotNull K key, V value, int hashCode) {
         this.key = key;
         this.value = value;
         this.hashCode = hashCode;
     }
 
-    SNode(@NotNull TNode<K, V> tNode) {
-        this.key = tNode.getKey();
-        this.value = tNode.getValue();
-        this.hashCode = tNode.getHashCode();
+    TombNode(@NotNull SingletonNode<K, V> singletonNode) {
+        this.key = singletonNode.getKey();
+        this.value = singletonNode.getValue();
+        this.hashCode = singletonNode.getHashCode();
     }
 
+    @NotNull
     K getKey() {
         return this.key;
     }
@@ -46,5 +47,7 @@ class SNode<K, V> implements Node<K, V> {
         return this.value;
     }
 
-    int getHashCode() { return this.hashCode; }
+    int getHashCode() {
+        return this.hashCode;
+    }
 }

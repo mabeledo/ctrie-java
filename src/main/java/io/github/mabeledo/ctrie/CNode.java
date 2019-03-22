@@ -47,6 +47,14 @@ class CNode<K, V> extends MainNode<K, V> {
 
     /**
      *
+     * @return
+     */
+    Node<K, V>[] getArray() {
+        return this.array;
+    }
+
+    /**
+     *
      * @param pos
      * @return
      */
@@ -69,9 +77,9 @@ class CNode<K, V> extends MainNode<K, V> {
      * @return
      */
     Node<K, V> resurrect(INode<K, V> iNode, Node<K, V> iNodeMain) {
-        if (iNodeMain instanceof TNode) {
-            TNode<K, V> tNode = (TNode<K, V>)iNodeMain;
-            return new SNode<>(tNode);
+        if (iNodeMain instanceof TombNode) {
+            TombNode<K, V> tombNode = (TombNode<K, V>)iNodeMain;
+            return new SingletonNode<>(tombNode);
         }
         return iNode;
     }
@@ -83,9 +91,9 @@ class CNode<K, V> extends MainNode<K, V> {
      */
     Node<K, V> contract(int level) {
         if (this.array.length == 1 && level > 0) {
-            if (this.array[0] instanceof SNode) {
-                SNode<K, V> sNode = (SNode<K, V>)this.array[0];
-                return new TNode<>(sNode);
+            if (this.array[0] instanceof SingletonNode) {
+                SingletonNode<K, V> singletonNode = (SingletonNode<K, V>)this.array[0];
+                return new TombNode<>(singletonNode);
             }
         }
         return this;
@@ -110,9 +118,9 @@ class CNode<K, V> extends MainNode<K, V> {
                 Node<K, V> iNodeMain = iNode.genCaSRead(cTrie);
                 // TODO: check for null values!
                 updatedArray[i] = this.resurrect(iNode, iNodeMain);
-            } else if (node instanceof SNode) {
-                SNode<K, V> sNode = (SNode<K, V>)node;
-                updatedArray[i] = sNode;
+            } else if (node instanceof SingletonNode) {
+                SingletonNode<K, V> singletonNode = (SingletonNode<K, V>)node;
+                updatedArray[i] = singletonNode;
 
             }
         }

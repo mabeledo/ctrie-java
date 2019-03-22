@@ -90,19 +90,19 @@ class INode<K, V> implements Node<K, V> {
                 }
             } else {
                 // Leaf.
-                SNode<K, V> sNode = (SNode<K, V>) node;
-                return Objects.equals(sNode.getKey(), key) ?
-                        Either.left(sNode.getValue()) :
+                SingletonNode<K, V> singletonNode = (SingletonNode<K, V>) node;
+                return Objects.equals(singletonNode.getKey(), key) ?
+                        Either.left(singletonNode.getValue()) :
                         Either.right(Status.NOT_FOUND);
             }
 
-        } else if (mainNode instanceof TNode) {
+        } else if (mainNode instanceof TombNode) {
             // Tomb node.
             if (cTrie.isReadOnly()) {
                 // Look for a potential value.
-                TNode<K, V> tNode = (TNode<K, V>) mainNode;
-                if (Objects.equals(tNode.getKey(), key) && (tNode.getHashCode() == hashCode)) {
-                    return Either.left(tNode.getValue());
+                TombNode<K, V> tombNode = (TombNode<K, V>) mainNode;
+                if (Objects.equals(tombNode.getKey(), key) && (tombNode.getHashCode() == hashCode)) {
+                    return Either.left(tombNode.getValue());
                 } else {
                     return Either.right(Status.NOT_FOUND);
                 }
@@ -111,8 +111,8 @@ class INode<K, V> implements Node<K, V> {
                 this.clean(parent, cTrie, level - 5);
                 return Either.right(Status.RESTART);
             }
-        } else if (mainNode instanceof LNode) {
-            return ((LNode<K, V>) mainNode).get(key);
+        } else if (mainNode instanceof LeafNode) {
+            return ((LeafNode<K, V>) mainNode).get(key);
         }
 
         return Either.right(Status.NOT_FOUND);
@@ -129,6 +129,7 @@ class INode<K, V> implements Node<K, V> {
      * @return
      */
     @NotNull
+    @TailRecursive
     TailCall<Either<V, Status>> insert(@NotNull K key, V value, int hashCode, int level, INode<K, V> parent, @NotNull Generation startGeneration, CTrie<K, V> cTrie) {
         MainNode<K, V> mainNode = this.genCaSRead(cTrie);
 
@@ -153,11 +154,11 @@ class INode<K, V> implements Node<K, V> {
 
                         return TailCalls.done(Either.right(Status.RESTART));
                     }
-                } else if (node instanceof SNode) {
-                    SNode<K, V> sNode = (SNode<K, V>) node;
-                    if (Objects.equals(sNode.getKey(), key) && (sNode.getHashCode() == hashCode)) {
+                } else if (node instanceof SingletonNode) {
+                    SingletonNode<K, V> singletonNode = (SingletonNode<K, V>) node;
+                    if (Objects.equals(singletonNode.getKey(), key) && (singletonNode.getHashCode() == hashCode)) {
                         // Key already exists, value will be updated.
-                        if (this.genCaS(cNode, cNode.updateAt(pos, new SNode<>(key, value, hashCode), this.generation), cTrie)) {
+                        if (this.genCaS(cNode, cNode.updateAt(pos, new SingletonNode<>(key, value, hashCode), this.generation), cTrie)) {
                             return TailCalls.done(Either.left(value));
                         }
 
@@ -168,7 +169,7 @@ class INode<K, V> implements Node<K, V> {
                         CNode<K, V> updatedRenewedNode =
                                 renewedNode.updateAt(
                                         pos,
-                                        new INode<>(MainNode.dual(sNode, sNode.getHashCode(), new SNode<>(key, value, hashCode), hashCode, level + 5, this.generation), this.generation),
+                                        new INode<>(MainNode.dual(singletonNode, singletonNode.getHashCode(), new SingletonNode<>(key, value, hashCode), hashCode, level + 5, this.generation), this.generation),
                                         this.generation);
                         if (this.genCaS(cNode, updatedRenewedNode, cTrie)) {
                             return TailCalls.done(Either.left(null));
@@ -180,22 +181,22 @@ class INode<K, V> implements Node<K, V> {
             } else {
                 CNode<K, V> renewedNode = Objects.equals(cNode.getGeneration(), this.generation) ? cNode : cNode.renew(this.generation, cTrie);
 
-                if (this.genCaS(cNode, renewedNode.insertAt(pos, flag, new SNode<>(key, value, hashCode), this.generation), cTrie)) {
+                if (this.genCaS(cNode, renewedNode.insertAt(pos, flag, new SingletonNode<>(key, value, hashCode), this.generation), cTrie)) {
                     return TailCalls.done(Either.left(null));
                 }
 
                 return TailCalls.done(Either.right(Status.RESTART));
             }
 
-        } else if (mainNode instanceof TNode) {
+        } else if (mainNode instanceof TombNode) {
             //
             this.clean(parent, cTrie, level - 5);
             return TailCalls.done(Either.right(Status.RESTART));
-        } else if (mainNode instanceof LNode) {
+        } else if (mainNode instanceof LeafNode) {
             //
-            LNode<K, V> lNode = (LNode<K, V>) mainNode;
+            LeafNode<K, V> leafNode = (LeafNode<K, V>) mainNode;
 
-            if (this.genCaS(lNode, lNode.insert(key, value), cTrie)) {
+            if (this.genCaS(leafNode, leafNode.insert(key, value), cTrie)) {
                 return TailCalls.done(Either.left(value));
             }
 

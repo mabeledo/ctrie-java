@@ -19,27 +19,136 @@
 
 package io.github.mabeledo.ctrie;
 
-import java.util.Iterator;
-import java.util.function.Consumer;
+import io.github.mabeledo.ctrie.exceptions.CTrieIteratorException;
 
-class CTrieIterator<E> implements Iterator<E> {
+import java.util.Iterator;
+import java.util.NoSuchElementException;
+import java.util.Objects;
+
+class CTrieIterator<K, V> implements Iterator<Node<K, V>> {
+    private CTrie<K, V> cTrie;
+    private Node<K, V>[][] stack;
+    private int[] stackPos;
+    private int depth;
+    private CTrieIterator<K, V> subIterator;
+    private Node<K, V> currentNode;
+
+    @SuppressWarnings("unchecked")
+    CTrieIterator(CTrie<K, V> cTrie) throws CTrieIteratorException {
+        if (!cTrie.isReadOnly()) {
+            throw new CTrieIteratorException("CTrie is not marked as read only!");
+        }
+
+        this.cTrie = cTrie;
+        this.stack = new Node[7][];
+        this.stackPos = new int[7];
+        this.depth = -1;
+        this.subIterator = null;
+        this.currentNode = null;
+
+        this.initialize();
+    }
+
+    private CTrieIterator() {
+    }
+
     @Override
     public boolean hasNext() {
-        return false;
+        return Objects.nonNull(this.currentNode) || Objects.nonNull(this.subIterator);
     }
 
     @Override
-    public E next() {
-        return null;
+    public Node<K, V> next() throws NoSuchElementException {
+        if (this.hasNext()) {
+            if (Objects.nonNull(this.subIterator)) {
+                Node<K, V> node = this.subIterator.next();
+                this.subIterator = null;
+                this.advance().invoke();
+
+                return node;
+
+            } else {
+                return this.currentNode;
+            }
+        }
+
+        throw new NoSuchElementException();
     }
 
-    @Override
-    public void remove() {
-
+    /**
+     *
+     * @param <K>
+     * @param <V>
+     * @return
+     */
+    static <K, V>  CTrieIterator<K, V> empty() {
+        return new CTrieIterator<>();
     }
 
-    @Override
-    public void forEachRemaining(Consumer<? super E> action) {
+    /*
+     *
+     */
+    private void initialize() {
+        this.readINode(this.cTrie.rdcssReadRoot()).invoke();
+    }
 
+    /*
+     *
+     * @param iNode
+     */
+    @TailRecursive
+    private TailCall<Boolean> readINode(INode<K, V> iNode) {
+        MainNode<K, V> mainNode = iNode.genCaSRead(this.cTrie);
+        if (Objects.isNull(mainNode)) {
+            this.currentNode = null;
+
+        } else if (mainNode instanceof TombNode) {
+            this.currentNode = mainNode;
+
+        } else if (mainNode instanceof LeafNode) {
+            LeafNode<K, V> leafNode = (LeafNode<K, V>) mainNode;
+            this.subIterator = (CTrieIterator<K, V>) leafNode.iterator();
+
+            return this.advance();
+        } else if (mainNode instanceof CNode) {
+            CNode<K, V> cNode = (CNode<K, V>) mainNode;
+            this.stack[++this.depth] = cNode.getArray();
+            this.stackPos[this.depth] = -1;
+
+            return this.advance();
+        }
+
+        return TailCalls.done(true);
+    }
+
+    /*
+     *
+     * @return
+     */
+    @TailRecursive
+    private TailCall<Boolean> advance() {
+        if (this.depth >= 0) {
+            int pos = this.stackPos[this.depth] + 1;
+            if (pos < this.stack[this.depth].length) {
+                this.stackPos[this.depth] = pos;
+
+                Node<K, V> node = this.stack[this.depth][pos];
+                if (node instanceof SingletonNode) {
+                    this.currentNode = node;
+
+                } else if (node instanceof INode) {
+                    return this.readINode((INode<K, V>) node);
+                }
+
+            } else {
+                this.depth--;
+
+                return this.advance();
+            }
+        } else {
+            this.currentNode = null;
+        }
+
+        return TailCalls.done(true);
     }
 }

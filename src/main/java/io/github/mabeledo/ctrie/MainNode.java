@@ -66,7 +66,7 @@ abstract class MainNode<K, V> implements Node<K, V> {
      * @param <V>
      * @return
      */
-    static <K, V> MainNode<K, V> dual(SNode<K, V> leftNode, int leftHashCode, SNode<K, V> rightNode, int rightHashCode, int level, Generation generation) {
+    static <K, V> MainNode<K, V> dual(SingletonNode<K, V> leftNode, int leftHashCode, SingletonNode<K, V> rightNode, int rightHashCode, int level, Generation generation) {
         if (level < 35) {
             int leftIndex = (leftHashCode >>> level) & 0x1f;
             int rightIndex = (rightHashCode >>> level) & 0x1f;
@@ -92,7 +92,7 @@ abstract class MainNode<K, V> implements Node<K, V> {
                 }
             }
         } else {
-            return new LNode<>(leftNode.getKey(), leftNode.getValue(), rightNode.getKey(), rightNode.getValue());
+            return new LeafNode<>(leftNode.getKey(), leftNode.getValue(), rightNode.getKey(), rightNode.getValue());
         }
     }
 }
