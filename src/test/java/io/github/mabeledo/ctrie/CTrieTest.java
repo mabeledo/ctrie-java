@@ -31,13 +31,13 @@ import java.util.stream.IntStream;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-public class CTrieTest {
+class CTrieTest {
     @Test
     void putAndGet() {
         // Simply put and get some random values.
         CTrie<String, Long> cTrie = new CTrie<>();
         List<AbstractMap.SimpleEntry<String, Long>> keyValueList =
-                IntStream.range(1, 1000001)
+                IntStream.range(1, 1_000_001)
                         .mapToObj(p -> new AbstractMap.SimpleEntry<>("entry-" + ThreadLocalRandom.current().nextInt(p), ThreadLocalRandom.current().nextLong()))
                         .collect(Collectors.toList());
         Map<String, Long> keyValueMap = keyValueList.stream()
