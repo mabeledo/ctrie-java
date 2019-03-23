@@ -157,9 +157,8 @@ class INode<K, V> implements Node<K, V> {
                 } else if (node instanceof SingletonNode) {
                     SingletonNode<K, V> singletonNode = (SingletonNode<K, V>) node;
                     if (Objects.equals(singletonNode.getKey(), key) && (singletonNode.getHashCode() == hashCode)) {
-                        // Key already exists, value will be updated.
                         if (this.genCaS(cNode, cNode.updateAt(pos, new SingletonNode<>(key, value, hashCode), this.generation), cTrie)) {
-                            return TailCalls.done(Either.left(value));
+                            return TailCalls.done(Either.left(singletonNode.getValue()));
                         }
 
                         return TailCalls.done(Either.right(Status.RESTART));
@@ -195,9 +194,10 @@ class INode<K, V> implements Node<K, V> {
         } else if (mainNode instanceof LeafNode) {
             //
             LeafNode<K, V> leafNode = (LeafNode<K, V>) mainNode;
+            LeafNode<K, V> updatedLeafNode = leafNode.insert(key, value);
 
-            if (this.genCaS(leafNode, leafNode.insert(key, value), cTrie)) {
-                return TailCalls.done(Either.left(value));
+            if (this.genCaS(leafNode, updatedLeafNode, cTrie)) {
+                return TailCalls.done(leafNode.get(key));
             }
 
             return TailCalls.done(Either.right(Status.RESTART));

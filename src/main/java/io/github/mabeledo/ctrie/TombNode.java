@@ -39,11 +39,11 @@ class TombNode<K, V> extends MainNode<K, V> {
     }
 
     @NotNull
-    K getKey() {
+    public K getKey() {
         return this.key;
     }
 
-    V getValue() {
+    public V getValue() {
         return this.value;
     }
 

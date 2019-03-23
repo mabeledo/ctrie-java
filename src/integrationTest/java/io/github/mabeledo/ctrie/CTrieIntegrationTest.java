@@ -19,7 +19,11 @@
 
 package io.github.mabeledo.ctrie;
 
-interface Node<K, V> {
-    default K getKey() { throw new UnsupportedOperationException(); }
-    default V getValue() { throw new UnsupportedOperationException(); }
+/*
+ * Run me some integration tests.
+ *
+ * Given the common assumption that unit tests *must* be predictable, i.e. must test for raw functionality, not
+ * eventual acts of god or whatever, concurrency tests will be placed here.
+ */
+public class CTrieIntegrationTest {
 }

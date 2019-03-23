@@ -30,7 +30,7 @@ class CTrieIterator<K, V> implements Iterator<Node<K, V>> {
     private Node<K, V>[][] stack;
     private int[] stackPos;
     private int depth;
-    private CTrieIterator<K, V> subIterator;
+    private Iterator<Node<K, V>> subIterator;
     private Node<K, V> currentNode;
 
     @SuppressWarnings("unchecked")
@@ -60,16 +60,22 @@ class CTrieIterator<K, V> implements Iterator<Node<K, V>> {
     @Override
     public Node<K, V> next() throws NoSuchElementException {
         if (this.hasNext()) {
+            Node<K, V> currentNode;
             if (Objects.nonNull(this.subIterator)) {
                 Node<K, V> node = this.subIterator.next();
-                this.subIterator = null;
-                this.advance().invoke();
+                if (!this.subIterator.hasNext()) {
+                    this.subIterator = null;
+                    this.advance().invoke();
+                }
 
-                return node;
+                currentNode = node;
 
             } else {
-                return this.currentNode;
+                currentNode = this.currentNode;
+                this.advance().invoke();
             }
+
+            return currentNode;
         }
 
         throw new NoSuchElementException();
@@ -107,9 +113,13 @@ class CTrieIterator<K, V> implements Iterator<Node<K, V>> {
 
         } else if (mainNode instanceof LeafNode) {
             LeafNode<K, V> leafNode = (LeafNode<K, V>) mainNode;
-            this.subIterator = (CTrieIterator<K, V>) leafNode.iterator();
+            this.subIterator = leafNode.iterator();
 
-            return this.advance();
+            if (!this.subIterator.hasNext()) {
+                this.subIterator = null;
+                return this.advance();
+            }
+            
         } else if (mainNode instanceof CNode) {
             CNode<K, V> cNode = (CNode<K, V>) mainNode;
             this.stack[++this.depth] = cNode.getArray();

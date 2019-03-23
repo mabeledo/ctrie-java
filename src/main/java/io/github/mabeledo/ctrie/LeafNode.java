@@ -56,6 +56,15 @@ class LeafNode<K, V> extends MainNode<K, V> {
     }
 
     /**
+     *
+     * @return
+     */
+    Map<K, V> getCollisionMap() {
+        return this.collisionMap;
+    }
+
+
+    /**
      * @param key
      * @return
      */

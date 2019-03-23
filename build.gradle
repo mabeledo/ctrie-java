@@ -11,6 +11,16 @@ repositories {
     mavenLocal()
 }
 
+sourceSets {
+    integrationTest {
+        java {
+            compileClasspath += main.output + test.output
+            runtimeClasspath += main.output + test.output
+            srcDir file("src/integrationTest/java")
+        }
+    }
+}
+
 dependencies {
     testCompile 'org.junit.jupiter:junit-jupiter:5.4.1'
     compile 'javax.validation:validation-api:2.0.1.Final'

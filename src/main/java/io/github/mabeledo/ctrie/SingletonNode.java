@@ -43,11 +43,11 @@ class SingletonNode<K, V> implements Node<K, V> {
         this.hashCode = tombNode.getHashCode();
     }
 
-    K getKey() {
+    public K getKey() {
         return this.key;
     }
 
-    V getValue() {
+    public V getValue() {
         return this.value;
     }
 

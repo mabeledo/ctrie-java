@@ -27,25 +27,27 @@ import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 public class CTrie<K, V> implements Iterable<Node<K, V>> {
-    @SuppressWarnings("AtomicFieldUpdaterNotStaticFinal")
-    private AtomicReferenceFieldUpdater<CTrie, Object> rootNodeUpdater;
+    private static final AtomicReferenceFieldUpdater<CTrie, Object> ROOT_NODE_UPDATER =
+            AtomicReferenceFieldUpdater.newUpdater(CTrie.class, Object.class, "rootNode");
     private volatile Object rootNode;
 
     private AtomicBoolean readOnly;
     private AtomicInteger size;
 
     public CTrie() {
-        this.rootNodeUpdater = AtomicReferenceFieldUpdater.newUpdater(CTrie.class, Object.class, "rootNode");
         this.rootNode = new INode<>();
         this.readOnly = new AtomicBoolean(false);
         this.size = new AtomicInteger(0);
     }
 
-    private CTrie(Object rootNode, AtomicReferenceFieldUpdater<CTrie, Object> rootNodeUpdater) {
+    private CTrie(Object rootNode, boolean readOnly) {
         this.rootNode = rootNode;
-        this.rootNodeUpdater = rootNodeUpdater;
+        this.readOnly = new AtomicBoolean(readOnly);
+        this.size = new AtomicInteger(0);
     }
 
     /**
@@ -109,7 +111,7 @@ public class CTrie<K, V> implements Iterable<Node<K, V>> {
 
         if (result.isLeft()) {
             V previousValue = result.left();
-            if (Objects.isNull(previousValue) || !previousValue.equals(value)) {
+            if (Objects.isNull(previousValue)) {
                 this.size.incrementAndGet();
             }
             return Objects.requireNonNullElse(previousValue, value);
@@ -131,6 +133,14 @@ public class CTrie<K, V> implements Iterable<Node<K, V>> {
      */
     public int size() {
         return this.size.get();
+    }
+
+    /**
+     *
+     * @return
+     */
+    public Stream<Node<K, V>> stream() {
+        return StreamSupport.stream(this.spliterator(), false);
     }
 
     /**
@@ -159,10 +169,7 @@ public class CTrie<K, V> implements Iterable<Node<K, V>> {
         MainNode<K, V> rootMainNode = root.genCaSRead(this);
 
         if (this.rdcssRoot(root, root.copyToGeneration(new Generation(), this), rootMainNode)) {
-            if (readOnly) {
-                return TailCalls.done(new CTrie<>(root, null));
-            }
-            return TailCalls.done(new CTrie<>(root, this.rootNodeUpdater));
+            return TailCalls.done(new CTrie<>(root, readOnly));
         }
 
         return TailCalls.call(() -> this.recursiveSnapshot(readOnly));
@@ -207,7 +214,7 @@ public class CTrie<K, V> implements Iterable<Node<K, V>> {
      * @return
      */
     INode<K, V> rdcssReadRoot(boolean abort) {
-        Object potentialRoot = this.rootNodeUpdater.get(this);
+        Object potentialRoot = CTrie.ROOT_NODE_UPDATER.get(this);
         if (potentialRoot instanceof INode) {
             @SuppressWarnings("unchecked")
             INode<K, V> root = (INode<K, V>) potentialRoot;
@@ -215,7 +222,7 @@ public class CTrie<K, V> implements Iterable<Node<K, V>> {
         }
 
         // In any other case, it has to be a RDCSSDescriptor, then.
-        return this.rdcssComplete(abort);
+        return this.rdcssComplete(abort).invoke();
     }
 
     /**
@@ -226,8 +233,8 @@ public class CTrie<K, V> implements Iterable<Node<K, V>> {
      */
     boolean rdcssRoot(INode<K, V> oldNode, INode<K, V> newNode, MainNode<K, V> expectedNode) {
         RDCSSDescriptor<K, V> descriptor = new RDCSSDescriptor<>(oldNode, newNode, expectedNode);
-        if (this.rootNodeUpdater.compareAndSet(this, oldNode, descriptor)) {
-            this.rdcssComplete(false);
+        if (CTrie.ROOT_NODE_UPDATER.compareAndSet(this, oldNode, descriptor)) {
+            this.rdcssComplete(false).invoke();
             return descriptor.isCommitted();
         } else {
             return false;
@@ -239,36 +246,37 @@ public class CTrie<K, V> implements Iterable<Node<K, V>> {
      * @param abort
      * @return
      */
-    private INode<K, V> rdcssComplete(boolean abort) {
-        Object potentialRoot = this.rootNodeUpdater.get(this);
+    @TailRecursive
+    private TailCall<INode<K, V>> rdcssComplete(boolean abort) {
+        Object potentialRoot = CTrie.ROOT_NODE_UPDATER.get(this);
 
         if (potentialRoot instanceof INode) {
             @SuppressWarnings("unchecked")
             INode<K, V> root = (INode<K, V>) potentialRoot;
-            return root;
+            return TailCalls.done(root);
         } else if (potentialRoot instanceof RDCSSDescriptor) {
             @SuppressWarnings("unchecked")
             RDCSSDescriptor<K, V> descriptor = new RDCSSDescriptor<>((RDCSSDescriptor<K, V>) potentialRoot);
 
             if (abort) {
-                if (this.rootNodeUpdater.compareAndSet(this, descriptor, descriptor.oldNode)) {
-                    return descriptor.oldNode;
+                if (CTrie.ROOT_NODE_UPDATER.compareAndSet(this, descriptor, descriptor.oldNode)) {
+                    return TailCalls.done(descriptor.oldNode);
                 }
             } else {
                 MainNode<K, V> oldMainNode = descriptor.oldNode.genCaSRead(this);
                 if (oldMainNode.equals(descriptor.expectedNode)) {
-                    if (this.rootNodeUpdater.compareAndSet(this, potentialRoot, descriptor.newNode)) {
+                    if (CTrie.ROOT_NODE_UPDATER.compareAndSet(this, potentialRoot, descriptor.newNode)) {
                         descriptor.commited.set(true);
-                        return descriptor.newNode;
+                        return TailCalls.done(descriptor.newNode);
                     }
                 } else {
-                    if (this.rootNodeUpdater.compareAndSet(this, potentialRoot, descriptor.oldNode)) {
-                        return descriptor.oldNode;
+                    if (CTrie.ROOT_NODE_UPDATER.compareAndSet(this, potentialRoot, descriptor.oldNode)) {
+                        return TailCalls.done(descriptor.oldNode);
                     }
                 }
             }
         }
-        return this.rdcssComplete(abort);
+        return TailCalls.call(() -> this.rdcssComplete(abort));
     }
 
     private static class RDCSSDescriptor<K, V> {
