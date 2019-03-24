@@ -197,7 +197,8 @@ class INode<K, V> implements Node<K, V> {
             LeafNode<K, V> updatedLeafNode = leafNode.insert(key, value);
 
             if (this.genCaS(leafNode, updatedLeafNode, cTrie)) {
-                return TailCalls.done(leafNode.get(key));
+                Either<V, Status> previousValue = leafNode.get(key);
+                return TailCalls.done(previousValue.isLeft() ? previousValue : Either.left(null));
             }
 
             return TailCalls.done(Either.right(Status.RESTART));

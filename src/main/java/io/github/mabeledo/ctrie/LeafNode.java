@@ -19,10 +19,15 @@
 
 package io.github.mabeledo.ctrie;
 
+import java.util.AbstractMap;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.stream.Collector;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 /**
  * Leaf node.
@@ -35,35 +40,27 @@ class LeafNode<K, V> extends MainNode<K, V> {
 
     private LeafNode() {
         super();
-        this.collisionMap = new LinkedHashMap<>();
+        this.collisionMap = Map.of();
     }
 
     LeafNode(K key, V value) {
-        this();
-        this.collisionMap.put(key, value);
+        super();
+        this.collisionMap = Map.of(key, value);
     }
 
     LeafNode(K firstKey, V firstValue, K secondKey, V secondValue) {
-        this();
-        this.collisionMap.put(firstKey, firstValue);
-        this.collisionMap.put(secondKey, secondValue);
+        super();
+        this.collisionMap = Map.of(firstKey, firstValue, secondKey, secondValue);
     }
 
-    LeafNode(Map<K, V> collisionMap, K key, V value) {
+    LeafNode(Map<K, V> collisionMap) {
         super();
         this.collisionMap = collisionMap;
-        this.collisionMap.put(key, value);
     }
 
-    /**
-     *
-     * @return
-     */
-    Map<K, V> getCollisionMap() {
-        return this.collisionMap;
+    int size() {
+        return this.collisionMap.size();
     }
-
-
     /**
      * @param key
      * @return
@@ -80,7 +77,14 @@ class LeafNode<K, V> extends MainNode<K, V> {
      * @return
      */
     LeafNode<K, V> insert(K key, V value) {
-        return new LeafNode<>(this.collisionMap, key, value);
+        Map<K, V> updatedMap =
+                Stream.concat(this.collisionMap.entrySet().stream(), Map.of(key, value).entrySet().stream())
+                        .collect(
+                                Collectors.toUnmodifiableMap(
+                                        Map.Entry::getKey,
+                                        Map.Entry::getValue,
+                                        (p, q) -> q));
+        return new LeafNode<>(updatedMap);
     }
 
     /**
