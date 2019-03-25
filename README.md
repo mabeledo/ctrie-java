@@ -7,9 +7,9 @@ According to Wikipedia:
 
 This is work in progress.
 
-✅ Lookup
-✅ Insertion
-❌ Removal
-❌ Snapshots (tests pending)
-❌ Performance tests
-❌ Concurrency tests
+- ✅ Lookup
+- ✅ Insertion
+- ❌ Removal
+- ❌ Snapshots (tests pending)
+- ❌ Performance tests
+- ❌ Concurrency tests
