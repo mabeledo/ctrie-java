@@ -1,5 +1,5 @@
 # ctrie-java
-A Java implementation of the concurrent trie described by Prokopec, Bronson, Bagwell, and Odersky.
+A Java implementation of the concurrent trie described by [Prokopec, Bronson, Bagwell, and Odersky](http://aleksandar-prokopec.com/resources/docs/ctries-snapshot.pdf).
 
 According to Wikipedia:
 
