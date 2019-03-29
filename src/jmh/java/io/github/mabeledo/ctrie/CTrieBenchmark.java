@@ -19,22 +19,17 @@
 
 package io.github.mabeledo.ctrie;
 
-class FlagPos {
-    private int index;
-    private int flag;
-    private int pos;
+import org.openjdk.jmh.annotations.Benchmark;
 
-    FlagPos(int hashcode, int level, long bitmap) {
-        this.index = (hashcode >>> level) & 0x1f;
-        this.flag = 1 << this.index;
-        this.pos = (bitmap == 0xffffffff) ? this.index : Long.bitCount(bitmap & (this.flag - 1));
-    }
+/*
+ * Run me some integration tests.
+ *
+ * Given the common assumption that unit tests *must* be predictable, i.e. must test for raw functionality, not
+ * eventual acts of god or whatever, concurrency tests will be placed here.
+ */
+public class CTrieBenchmark {
 
-    int getFlag() {
-        return this.flag;
-    }
+    @Benchmark
+    void insert() {}
 
-    int getPos() {
-        return this.pos;
-    }
 }

@@ -23,8 +23,6 @@ import org.junit.jupiter.api.Test;
 
 import java.util.AbstractMap;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -40,11 +38,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class CTrieTest {
     @Test
     void putAndGet() {
-        // Simply put and get some random values.
         CTrie<String, Long> cTrie = new CTrie<>();
         List<AbstractMap.SimpleEntry<String, Long>> keyValueList =
                 IntStream.range(1, 10_000_001)
-                        .mapToObj(p -> new AbstractMap.SimpleEntry<>("entry-" + ThreadLocalRandom.current().nextInt(p), ThreadLocalRandom.current().nextLong()))
+                        .mapToObj(p ->
+                                new AbstractMap.SimpleEntry<>(
+                                        "entry-" + ThreadLocalRandom.current().nextInt(p),
+                                        ThreadLocalRandom.current().nextLong()))
                         .collect(Collectors.toList());
         Map<String, Long> keyValueMap = keyValueList.stream()
                 .collect(Collectors.toMap(
@@ -54,20 +54,23 @@ class CTrieTest {
 
         final long cTrieSize = StreamSupport.stream(cTrie.spliterator(), false).count();
 
+        assertEquals(cTrieSize, cTrie.size());
         assertEquals(keyValueMap.size(), cTrie.size());
 
         List<Map.Entry<String, Long>> diffFromKeyValueMap =
                 keyValueMap.entrySet().stream()
-                        .filter(p -> Objects.nonNull(cTrie.get(p.getKey())))
-                        .filter(q -> !cTrie.get(q.getKey()).equals(q.getValue()))
+                        .filter(p ->
+                                Objects.isNull(cTrie.get(p.getKey())) ||
+                                        !cTrie.get(p.getKey()).equals(p.getValue()))
                         .collect(Collectors.toList());
 
         assertTrue(diffFromKeyValueMap.isEmpty(), "Offenders: " + diffFromKeyValueMap.toString());
 
         List<Node<String, Long>> diffFromCTrie =
                 cTrie.stream()
-                        .filter(p -> Objects.nonNull(keyValueMap.get(p.getKey())))
-                        .filter(p -> !keyValueMap.get(p.getKey()).equals(p.getValue()))
+                        .filter(p ->
+                                Objects.isNull(keyValueMap.get(p.getKey())) ||
+                                        !keyValueMap.get(p.getKey()).equals(p.getValue()))
                         .collect(Collectors.toList());
 
         assertTrue(diffFromCTrie.isEmpty(), "Offenders: " + diffFromCTrie.toString());
@@ -75,14 +78,16 @@ class CTrieTest {
 
     @Test
     void loopPutAndGet() {
-        // Randomly insert and retrieve items.
         final int maxItems = 10_000_001;
         final int iterations = 5;
         CTrie<String, Long> cTrie = new CTrie<>();
 
         List<AbstractMap.SimpleEntry<String, Long>> keyValueList =
                 IntStream.range(1, maxItems)
-                        .mapToObj(p -> new AbstractMap.SimpleEntry<>("entry-" + ThreadLocalRandom.current().nextInt(p), ThreadLocalRandom.current().nextLong()))
+                        .mapToObj(p ->
+                                new AbstractMap.SimpleEntry<>(
+                                        "entry-" + ThreadLocalRandom.current().nextInt(p),
+                                        ThreadLocalRandom.current().nextLong()))
                         .collect(Collectors.toList());
 
         List<Map<String, Long>> keyValueMaps = new ArrayList<>();
@@ -111,6 +116,9 @@ class CTrieTest {
         final Set<String> keySet =
                 keyValueList.stream().map(AbstractMap.SimpleEntry::getKey).collect(Collectors.toSet());
 
+        final long cTrieSize = StreamSupport.stream(cTrie.spliterator(), false).count();
+
+        assertEquals(cTrieSize, cTrie.size());
         assertEquals(keySet.size(), cTrie.size());
 
         List<String> diff =
@@ -122,7 +130,51 @@ class CTrieTest {
 
     @Test
     void remove() {
+        CTrie<String, Long> cTrie = new CTrie<>();
+        List<Map.Entry<String, Long>> keyValueList =
+                IntStream.range(1, 10_000_001)
+                        .mapToObj(p ->
+                                new AbstractMap.SimpleEntry<>(
+                                        "entry-" + ThreadLocalRandom.current().nextInt(p),
+                                        ThreadLocalRandom.current().nextLong()))
+                        .collect(Collectors.toList());
+        Map<String, Long> keyValueMap = keyValueList.stream()
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey, Map.Entry::getValue, (p, q) -> q));
 
+        keyValueList.forEach(p -> cTrie.put(p.getKey(), p.getValue()));
+
+        // Remove some randomly.
+        List<Map.Entry<String, Long>> updatedKeyValueList =
+                keyValueList.stream()
+                        .filter(p -> Math.floorMod(p.getValue(), 2L) == 0)
+                        .collect(Collectors.toList());
+
+        updatedKeyValueList.forEach(p -> keyValueMap.remove(p.getKey()));
+        updatedKeyValueList.forEach(p -> cTrie.remove(p.getKey()));
+
+        final long cTrieSize = StreamSupport.stream(cTrie.spliterator(), false).count();
+
+        assertEquals(cTrieSize, cTrie.size());
+        assertEquals(keyValueMap.size(), cTrie.size());
+
+        List<Map.Entry<String, Long>> diffFromKeyValueMap =
+                keyValueMap.entrySet().stream()
+                        .filter(p ->
+                                Objects.isNull(cTrie.get(p.getKey())) ||
+                                        !cTrie.get(p.getKey()).equals(p.getValue()))
+                        .collect(Collectors.toList());
+
+        assertTrue(diffFromKeyValueMap.isEmpty(), "Offenders: " + diffFromKeyValueMap.toString());
+
+        List<Node<String, Long>> diffFromCTrie =
+                cTrie.stream()
+                        .filter(p ->
+                                Objects.isNull(keyValueMap.get(p.getKey())) ||
+                                        !keyValueMap.get(p.getKey()).equals(p.getValue()))
+                        .collect(Collectors.toList());
+
+        assertTrue(diffFromCTrie.isEmpty(), "Offenders: " + diffFromCTrie.toString());
     }
 
     @Test

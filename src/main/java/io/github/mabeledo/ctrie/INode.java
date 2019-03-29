@@ -68,13 +68,17 @@ class INode<K, V> implements Node<K, V> {
 
         if (mainNode instanceof CNode) {
             CNode<K, V> cNode = (CNode<K, V>) mainNode;
-            FlagPos flagPos = new FlagPos(hashCode, level, cNode.getBitmap());
+            int index = (hashCode >>> level) & 0x1f;
+            int flag = 1 << index;
+            int bitmap = cNode.getBitmap();
 
-            if ((cNode.getBitmap() & flagPos.getFlag()) == 0) {
+            if ((bitmap & flag) == 0) {
                 return Either.right(Status.NOT_FOUND);
             }
 
-            Node<K, V> node = cNode.getChild(flagPos.getPos());
+            int pos = (bitmap == 0xffffffff) ? index : Integer.bitCount(bitmap & (flag - 1));
+
+            Node<K, V> node = cNode.getChild(pos);
             if (node instanceof INode) {
                 INode<K, V> iNode = (INode<K, V>) node;
                 if (cTrie.isReadOnly() || (Objects.equals(startGeneration, iNode.generation))) {
@@ -89,9 +93,8 @@ class INode<K, V> implements Node<K, V> {
                     }
                 }
             } else {
-                // Leaf.
                 SingletonNode<K, V> singletonNode = (SingletonNode<K, V>) node;
-                return Objects.equals(singletonNode.getKey(), key) ?
+                return Objects.equals(singletonNode.getKey(), key) && (singletonNode.getHashCode() == hashCode) ?
                         Either.left(singletonNode.getValue()) :
                         Either.right(Status.NOT_FOUND);
             }
@@ -209,6 +212,127 @@ class INode<K, V> implements Node<K, V> {
     }
 
     /**
+     * Not quite tail recursive at all, btw, but lazy evaluation always helps a little.
+     *
+     * @param key
+     * @param value           a value <V>. If not null only pairs containing this key and value. If null, any value linked to the key will be removed.
+     * @param hashCode
+     * @param level
+     * @param parent
+     * @param startGeneration
+     * @param cTrie
+     * @return an Either containing the status of the operation, or the removed value.
+     */
+    @NotNull
+    Either<V, Status> remove(@NotNull K key, V value, int hashCode, int level, INode<K, V> parent, @NotNull Generation startGeneration, CTrie<K, V> cTrie) {
+        MainNode<K, V> mainNode = this.genCaSRead(cTrie);
+
+        if (mainNode instanceof CNode) {
+            CNode<K, V> cNode = (CNode<K, V>) mainNode;
+
+            int index = (hashCode >>> level) & 0x1f;
+            int flag = 1 << index;
+            int bitmap = cNode.getBitmap();
+
+            if ((bitmap & flag) == 0) {
+                return Either.right(Status.NOT_FOUND);
+            }
+
+            int pos = Integer.bitCount(bitmap & (flag - 1));
+            Node<K, V> childNode = cNode.getChild(pos);
+            Either<V, Status> result;
+
+            if (childNode instanceof INode) {
+                INode<K, V> iNode = (INode<K, V>) childNode;
+
+                if (Objects.equals(startGeneration, iNode.getGeneration())) {
+                    result = iNode.remove(key, value, hashCode, level + 5, this, startGeneration, cTrie);
+                } else {
+                    if (this.genCaS(cNode, cNode.renew(startGeneration, cTrie), cTrie)) {
+                        result = this.remove(key, value, hashCode, level, parent, startGeneration, cTrie);
+                    } else {
+                        result = Either.right(Status.RESTART);
+                    }
+                }
+
+            } else if (childNode instanceof SingletonNode) {
+                SingletonNode<K, V> singletonNode = (SingletonNode<K, V>) childNode;
+
+                if (Objects.equals(singletonNode.getKey(), key) && (singletonNode.getHashCode() == hashCode) &&
+                        ((value == null) || (Objects.equals(value, singletonNode.getValue())))) {
+                    MainNode<K, V> updatedNode =
+                            cNode.removeAt(pos, flag, this.generation).contract(level);
+                    if (this.genCaS(cNode, updatedNode, cTrie)) {
+                        result = Either.left(singletonNode.getValue());
+                    } else {
+                        result = Either.right(Status.RESTART);
+                    }
+                } else {
+                    result = Either.right(Status.NOT_FOUND);
+                }
+            } else {
+                result = Either.right(Status.RESTART);
+            }
+
+            if (result.isRight()) {
+                return result;
+            }
+
+            if (Objects.nonNull(parent)) {
+                Node<K, V> node = this.genCaSRead(cTrie);
+                if (node instanceof TombNode) {
+                    this.cleanParent(hashCode, level, node, parent, startGeneration, cTrie).invoke();
+                }
+            }
+
+            return result;
+
+        } else if (mainNode instanceof TombNode) {
+            this.clean(parent, cTrie, level - 5);
+            return Either.right(Status.RESTART);
+        } else if (mainNode instanceof LeafNode) {
+            LeafNode<K, V> leafNode = (LeafNode<K, V>) mainNode;
+
+            if (Objects.isNull(value)) {
+                Either<V, Status> potentialLeafNodeValue = leafNode.get(key);
+
+                if (potentialLeafNodeValue.isLeft()) {
+                    // Some value found.
+                    MainNode<K, V> updatedNode = leafNode.remove(key);
+
+                    if (this.genCaS(leafNode, updatedNode, cTrie)) {
+                        return potentialLeafNodeValue;
+                    }
+
+                    return Either.right(Status.RESTART);
+                }
+
+                // No value found, return Status.NOT_FOUND.
+                return Either.right(Status.NOT_FOUND);
+            } else {
+                // Remove by key *and* value.
+                Either<V, Status> potentialLeafNodeValue = leafNode.get(key);
+
+                if (potentialLeafNodeValue.isLeft()) {
+                    V storedValue = potentialLeafNodeValue.left();
+                    if (Objects.equals(value, storedValue)) {
+                        MainNode<K, V> updatedNode = leafNode.remove(key);
+
+                        if (!this.genCaS(leafNode, updatedNode, cTrie)) {
+                            return Either.right(Status.RESTART);
+                        }
+                    }
+                }
+
+                return potentialLeafNodeValue;
+            }
+        }
+
+        // Try again by default, although it should never reach this point.
+        return Either.right(Status.RESTART);
+    }
+
+    /**
      * Get the current main node of this INode.
      *
      * @param cTrie the current CTrie structure where this INode lives.
@@ -236,14 +360,19 @@ class INode<K, V> implements Node<K, V> {
      * @return the committed node.
      */
     private MainNode<K, V> genCaSCommit(MainNode<K, V> node, @NotNull CTrie<K, V> cTrie) {
+        if (Objects.isNull(node)) {
+            return null;
+        }
+
         MainNode<K, V> previousNode = node.readPrevious();
         INode<K, V> cTrieRoot = cTrie.rdcssReadRoot(true);
 
         if (Objects.isNull(previousNode)) {
             return node;
         } else if (previousNode instanceof FailedNode) {
-            if (INode.MAIN_NODE_UPDATER.compareAndSet(this, node, previousNode.readPrevious())) {
-                return previousNode.readPrevious();
+            FailedNode<K, V> failedNode = (FailedNode<K, V>) previousNode;
+            if (INode.MAIN_NODE_UPDATER.compareAndSet(this, node, failedNode.readPrevious())) {
+                return failedNode.readPrevious();
             } else {
                 @SuppressWarnings("unchecked")
                 MainNode<K, V> mainNode = (MainNode<K, V>) INode.MAIN_NODE_UPDATER.get(this);
@@ -300,8 +429,11 @@ class INode<K, V> implements Node<K, V> {
         return newINode;
     }
 
+
     /*
      *
+     * @param parent
+     * @param cTrie
      * @param level
      */
     private void clean(INode<K, V> parent, CTrie<K, V> cTrie, int level) {
@@ -310,5 +442,53 @@ class INode<K, V> implements Node<K, V> {
             CNode<K, V> cNode = (CNode<K, V>) mainNode;
             parent.genCaS(cNode, cNode.compress(cTrie, level, this.generation), cTrie);
         }
+    }
+
+    /*
+     *
+     * @param hashCode
+     * @param level
+     * @param nonLiveNode
+     * @param parent
+     * @param startGeneration
+     * @param cTrie
+     */
+    @TailRecursive
+    private TailCall<Void> cleanParent(int hashCode, int level, Object nonLiveNode, INode<K, V> parent, @NotNull Generation startGeneration, CTrie<K, V> cTrie) {
+        MainNode<K, V> parentMainNode = parent.genCaSRead(cTrie);
+
+        if (parentMainNode instanceof CNode) {
+            CNode<K, V> cNode = (CNode<K, V>) parentMainNode;
+
+            int index = (hashCode >>> (level - 5)) & 0x1f;
+            int bitmap = cNode.getBitmap();
+            int flag = 1 << index;
+
+            if ((bitmap & flag) == 0) {
+                return TailCalls.done(null);
+            }
+
+            int pos = Integer.bitCount(bitmap & (flag - 1));
+            Node<K, V> node = cNode.getChild(pos);
+
+            if (node.equals(this)) {
+                if (nonLiveNode instanceof TombNode) {
+                    @SuppressWarnings("unchecked")
+                    TombNode<K, V> tombNode = (TombNode<K, V>) nonLiveNode;
+                    MainNode<K, V> updatedCNode =
+                            cNode
+                                    .updateAt(pos, new SingletonNode<>(tombNode), this.generation)
+                                    .contract(level - 5);
+
+                    if (!parent.genCaS(cNode, updatedCNode, cTrie)) {
+                        if (Objects.equals(cTrie.rdcssReadRoot().getGeneration(), startGeneration)) {
+                            TailCalls.call(() ->
+                                    this.cleanParent(hashCode, level, nonLiveNode, parent, startGeneration, cTrie));
+                        }
+                    }
+                }
+            }
+        }
+        return TailCalls.done(null);
     }
 }

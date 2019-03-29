@@ -44,10 +44,10 @@ public class CTrie<K, V> implements Iterable<Node<K, V>> {
         this.size = new AtomicInteger(0);
     }
 
-    private CTrie(Object rootNode, boolean readOnly) {
+    private CTrie(Object rootNode, boolean readOnly, int size) {
         this.rootNode = rootNode;
         this.readOnly = new AtomicBoolean(readOnly);
-        this.size = new AtomicInteger(0);
+        this.size = new AtomicInteger(size);
     }
 
     /**
@@ -125,6 +125,30 @@ public class CTrie<K, V> implements Iterable<Node<K, V>> {
      * @return
      */
     public V remove(@NotNull K key) {
+        int hashCode = key.hashCode();
+        return this.removeByHashCode(key, null, hashCode);
+    }
+
+    /*
+     *
+     * @param key
+     * @param value
+     * @param hashCode
+     * @return the value previously associated with the key.
+     */
+    private V removeByHashCode(@NotNull K key, V value, int hashCode) {
+        INode<K, V> root = this.rdcssReadRoot();
+
+        Either<V, Status> result;
+        do {
+            result =
+                    root.remove(key, null, hashCode, 0, null, root.getGeneration(), this);
+        } while (result.isRight() && result.right().equals(Status.RESTART));
+
+        if (result.isLeft()) {
+            this.size.decrementAndGet();
+            return result.left();
+        }
         return null;
     }
 
@@ -169,7 +193,7 @@ public class CTrie<K, V> implements Iterable<Node<K, V>> {
         MainNode<K, V> rootMainNode = root.genCaSRead(this);
 
         if (this.rdcssRoot(root, root.copyToGeneration(new Generation(), this), rootMainNode)) {
-            return TailCalls.done(new CTrie<>(root, readOnly));
+            return TailCalls.done(new CTrie<>(root, readOnly, this.size.get()));
         }
 
         return TailCalls.call(() -> this.recursiveSnapshot(readOnly));

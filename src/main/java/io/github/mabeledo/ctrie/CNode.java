@@ -20,6 +20,7 @@
 package io.github.mabeledo.ctrie;
 
 import java.util.Arrays;
+import java.util.Objects;
 
 class CNode<K, V> extends MainNode<K, V> {
     private final int bitmap;
@@ -89,7 +90,7 @@ class CNode<K, V> extends MainNode<K, V> {
      * @param level
      * @return
      */
-    Node<K, V> contract(int level) {
+    MainNode<K, V> contract(int level) {
         if (this.array.length == 1 && level > 0) {
             if (this.array[0] instanceof SingletonNode) {
                 SingletonNode<K, V> singletonNode = (SingletonNode<K, V>)this.array[0];
@@ -106,26 +107,27 @@ class CNode<K, V> extends MainNode<K, V> {
      * @param generation
      * @return
      */
-    CNode<K, V> compress(CTrie<K, V> cTrie, int level, Generation generation) {
+    MainNode<K, V> compress(CTrie<K, V> cTrie, int level, Generation generation) {
         int bitmap = this.bitmap;
         @SuppressWarnings("unchecked")
         Node<K, V>[] updatedArray = new Node[this.array.length];
 
         for (int i = 0; i < this.array.length; i++) {
             Node<K, V> node = this.array[i];
-            if (node instanceof INode) {
+            if (node instanceof INode){
                 INode<K, V> iNode = (INode<K, V>)node;
                 Node<K, V> iNodeMain = iNode.genCaSRead(cTrie);
                 // TODO: check for null values!
-                updatedArray[i] = this.resurrect(iNode, iNodeMain);
+                if (Objects.nonNull(iNodeMain)) {
+                    updatedArray[i] = this.resurrect(iNode, iNodeMain);
+                }
             } else if (node instanceof SingletonNode) {
                 SingletonNode<K, V> singletonNode = (SingletonNode<K, V>)node;
                 updatedArray[i] = singletonNode;
-
             }
         }
 
-        return (CNode<K, V>) new CNode<>(bitmap, updatedArray, generation).contract(level);
+        return new CNode<>(bitmap, updatedArray, generation).contract(level);
     }
 
     /**
@@ -136,7 +138,11 @@ class CNode<K, V> extends MainNode<K, V> {
      * @return
      */
     CNode<K, V> updateAt(int pos, Node<K, V> node, Generation generation) {
-        Node<K, V>[] updatedArray = Arrays.copyOf(this.array, this.array.length);
+        int arrayLength = this.array.length;
+        @SuppressWarnings("unchecked")
+        Node<K, V>[] updatedArray = new Node[arrayLength];
+
+        System.arraycopy(this.array, 0, updatedArray, 0, this.array.length);
         updatedArray[pos] = node;
         return new CNode<>(this.bitmap, updatedArray, generation);
     }
@@ -152,19 +158,30 @@ class CNode<K, V> extends MainNode<K, V> {
         int arrayLength = this.array.length;
         @SuppressWarnings("unchecked")
         Node<K, V>[] updatedArray = new Node[arrayLength + 1];
-        for (int i = 0; i < arrayLength + 1; i++) {
-            if (i != pos) {
-                if (i < pos) {
-                    updatedArray[i] = this.array[i];
-                } else {
-                    updatedArray[i] = this.array[i - 1];
-                }
-            } else {
-                updatedArray[i] = node;
-            }
-        }
+
+        System.arraycopy(this.array, 0, updatedArray, 0, pos);
+        updatedArray[pos] = node;
+        System.arraycopy(this.array, pos, updatedArray, pos + 1, arrayLength - pos);
 
         return new CNode<>(this.bitmap | flag, updatedArray, generation);
+    }
+
+    /**
+     *
+     * @param pos
+     * @param flag
+     * @param generation
+     * @return
+     */
+    CNode<K, V> removeAt(int pos, int flag, Generation generation) {
+        int arrayLength = this.array.length;
+        @SuppressWarnings("unchecked")
+        Node<K, V>[] updatedArray = new Node[arrayLength - 1];
+
+        System.arraycopy(this.array, 0, updatedArray, 0, pos);
+        System.arraycopy(this.array, pos + 1, updatedArray, pos, (arrayLength - 1) - pos);
+
+        return new CNode<>(this.bitmap ^ flag, updatedArray, generation);
     }
 
     /**

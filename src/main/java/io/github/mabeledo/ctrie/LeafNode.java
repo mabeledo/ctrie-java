@@ -38,29 +38,16 @@ import java.util.stream.StreamSupport;
 class LeafNode<K, V> extends MainNode<K, V> {
     private final Map<K, V> collisionMap;
 
-    private LeafNode() {
-        super();
-        this.collisionMap = Map.of();
-    }
-
-    LeafNode(K key, V value) {
-        super();
-        this.collisionMap = Map.of(key, value);
-    }
-
     LeafNode(K firstKey, V firstValue, K secondKey, V secondValue) {
         super();
         this.collisionMap = Map.of(firstKey, firstValue, secondKey, secondValue);
     }
 
-    LeafNode(Map<K, V> collisionMap) {
+    private LeafNode(Map<K, V> collisionMap) {
         super();
         this.collisionMap = collisionMap;
     }
 
-    int size() {
-        return this.collisionMap.size();
-    }
     /**
      * @param key
      * @return
@@ -85,6 +72,31 @@ class LeafNode<K, V> extends MainNode<K, V> {
                                         Map.Entry::getValue,
                                         (p, q) -> q));
         return new LeafNode<>(updatedMap);
+    }
+
+    /**
+     *
+     * @param key
+     * @return
+     */
+    MainNode<K, V> remove(K key) {
+        Map<K, V> updatedMap =
+                this.collisionMap.entrySet().stream()
+                        .filter(p -> !p.getKey().equals(key))
+                        .collect(Collectors.toUnmodifiableMap(
+                                Map.Entry::getKey,
+                                Map.Entry::getValue
+                        ));
+
+        if (updatedMap.size() > 1) {
+            return new LeafNode<>(updatedMap);
+        } else {
+            // Only one element, so it is going to be a TombNode and get compressed afterwards.
+            // Here the assumption is that it *has* to have at least one element, as there is no way a leaf can be
+            // created with less than two initial elements.
+            Map.Entry<K, V> entry = updatedMap.entrySet().iterator().next();
+            return new TombNode<>(entry.getKey(), entry.getValue(), entry.getKey().hashCode());
+        }
     }
 
     /**

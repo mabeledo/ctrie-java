@@ -24,6 +24,7 @@ import io.github.mabeledo.ctrie.exceptions.CTrieIteratorException;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicInteger;
 
 class CTrieIterator<K, V> implements Iterator<Node<K, V>> {
     private CTrie<K, V> cTrie;
@@ -32,6 +33,7 @@ class CTrieIterator<K, V> implements Iterator<Node<K, V>> {
     private int depth;
     private Iterator<Node<K, V>> subIterator;
     private Node<K, V> currentNode;
+    private AtomicInteger tombCounter = new AtomicInteger(0);
 
     @SuppressWarnings("unchecked")
     CTrieIterator(CTrie<K, V> cTrie) throws CTrieIteratorException {
@@ -110,6 +112,7 @@ class CTrieIterator<K, V> implements Iterator<Node<K, V>> {
 
         } else if (mainNode instanceof TombNode) {
             this.currentNode = mainNode;
+            tombCounter.incrementAndGet();
 
         } else if (mainNode instanceof LeafNode) {
             LeafNode<K, V> leafNode = (LeafNode<K, V>) mainNode;
