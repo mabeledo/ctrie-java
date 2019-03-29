@@ -9,7 +9,7 @@ This is work in progress.
 
 - ✅ Lookup
 - ✅ Insertion
-- ❌ Removal
+- ✅ Removal
 - ❌ Snapshots (tests pending)
 - ❌ Performance tests
 - ❌ Concurrency tests
