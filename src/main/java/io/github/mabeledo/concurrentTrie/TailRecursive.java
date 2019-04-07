@@ -17,19 +17,14 @@
  * under the License.
  */
 
-package io.github.mabeledo.ctrie;
+package io.github.mabeledo.concurrentTrie;
 
-import org.openjdk.jmh.annotations.Benchmark;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
 
-/*
- * Run me some integration tests.
- *
- * Given the common assumption that unit tests *must* be predictable, i.e. must test for raw functionality, not
- * eventual acts of god or whatever, concurrency tests will be placed here.
- */
-public class CTrieBenchmark {
-
-    @Benchmark
-    void insert() {}
-
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.METHOD)
+public @interface TailRecursive {
 }

@@ -17,14 +17,9 @@
  * under the License.
  */
 
-package io.github.mabeledo.ctrie;
+package io.github.mabeledo.concurrentTrie;
 
-import java.lang.annotation.ElementType;
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
-import java.lang.annotation.Target;
-
-@Retention(RetentionPolicy.RUNTIME)
-@Target(ElementType.METHOD)
-public @interface TailRecursive {
+interface Node<K, V> {
+    default K getKey() { throw new UnsupportedOperationException(); }
+    default V getValue() { throw new UnsupportedOperationException(); }
 }

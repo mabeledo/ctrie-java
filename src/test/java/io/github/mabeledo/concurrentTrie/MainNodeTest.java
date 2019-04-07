@@ -17,28 +17,14 @@
  * under the License.
  */
 
-package io.github.mabeledo.ctrie;
+package io.github.mabeledo.concurrentTrie;
 
 import org.junit.jupiter.api.Test;
 
-class INodeTest {
-    @Test
-    void lookup() {
-
-    }
+class MainNodeTest {
 
     @Test
-    void insert() {
-
-    }
-
-    @Test
-    void genCaSRead() {
-
-    }
-
-    @Test
-    void copyToGen() {
+    void dual() {
 
     }
 }

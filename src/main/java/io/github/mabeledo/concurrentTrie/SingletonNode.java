@@ -17,26 +17,39 @@
  * under the License.
  */
 
-package io.github.mabeledo.ctrie;
+package io.github.mabeledo.concurrentTrie;
 
-import java.util.stream.Stream;
+import javax.validation.constraints.NotNull;
 
-/*
- * From Subramaniam, Venkat, "Functional Programming in Java".
+/**
+ * Singleton node.
+ * @param <K>
+ * @param <V>
  */
-@FunctionalInterface
-interface TailCall<T> {
-    TailCall<T> apply();
+class SingletonNode<K, V> implements Node<K, V> {
+    private final K key;
+    private final V value;
+    private final int hashCode;
 
-    default boolean isComplete() { return false; }
-
-    default T result() { throw new Error("Method not implemented"); }
-
-    default T invoke() throws Error {
-        return Stream.iterate(this, TailCall::apply)
-                .filter(TailCall::isComplete)
-                .findFirst()
-                .orElseThrow(() -> new Error("No result available."))
-                .result();
+    SingletonNode(@NotNull K key, V value, int hashCode) {
+        this.key = key;
+        this.value = value;
+        this.hashCode = hashCode;
     }
+
+    SingletonNode(@NotNull TombNode<K, V> tombNode) {
+        this.key = tombNode.getKey();
+        this.value = tombNode.getValue();
+        this.hashCode = tombNode.getHashCode();
+    }
+
+    public K getKey() {
+        return this.key;
+    }
+
+    public V getValue() {
+        return this.value;
+    }
+
+    int getHashCode() { return this.hashCode; }
 }

@@ -17,17 +17,12 @@
  * under the License.
  */
 
-package io.github.mabeledo.ctrie;
+package io.github.mabeledo.concurrentTrie;
 
-import java.util.AbstractMap;
-import java.util.Collections;
 import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.stream.Collector;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import java.util.stream.StreamSupport;
 
 /**
  * Leaf node.
@@ -61,16 +56,17 @@ class LeafNode<K, V> extends MainNode<K, V> {
     /**
      * @param key
      * @param value
+     * @param onlyIfAbsent
      * @return
      */
-    LeafNode<K, V> insert(K key, V value) {
+    LeafNode<K, V> insert(K key, V value, boolean onlyIfAbsent) {
         Map<K, V> updatedMap =
                 Stream.concat(this.collisionMap.entrySet().stream(), Map.of(key, value).entrySet().stream())
                         .collect(
                                 Collectors.toUnmodifiableMap(
                                         Map.Entry::getKey,
                                         Map.Entry::getValue,
-                                        (p, q) -> q));
+                                        (p, q) -> onlyIfAbsent ? p : q));
         return new LeafNode<>(updatedMap);
     }
 

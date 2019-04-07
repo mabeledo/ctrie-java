@@ -17,7 +17,7 @@
  * under the License.
  */
 
-package io.github.mabeledo.ctrie;
+package io.github.mabeledo.concurrentTrie;
 
 import javax.validation.constraints.NotNull;
 

@@ -17,14 +17,26 @@
  * under the License.
  */
 
-package io.github.mabeledo.ctrie;
+package io.github.mabeledo.concurrentTrie;
 
-import org.junit.jupiter.api.Test;
+import java.util.stream.Stream;
 
-class MainNodeTest {
+/*
+ * From Subramaniam, Venkat, "Functional Programming in Java".
+ */
+@FunctionalInterface
+interface TailCall<T> {
+    TailCall<T> apply();
 
-    @Test
-    void dual() {
+    default boolean isComplete() { return false; }
 
+    default T result() { throw new Error("Method not implemented"); }
+
+    default T invoke() throws Error {
+        return Stream.iterate(this, TailCall::apply)
+                .filter(TailCall::isComplete)
+                .findFirst()
+                .orElseThrow(() -> new Error("No result available."))
+                .result();
     }
 }

@@ -17,10 +17,7 @@
  * under the License.
  */
 
-package io.github.mabeledo.ctrie.exceptions;
+package io.github.mabeledo.concurrentTrie;
 
-public class CTrieIteratorException extends Exception {
-    public CTrieIteratorException(String message) {
-        super(message);
-    }
+public class Generation {
 }

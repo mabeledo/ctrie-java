@@ -17,30 +17,30 @@
  * under the License.
  */
 
-package io.github.mabeledo.ctrie;
+package io.github.mabeledo.concurrentTrie;
 
 import javax.validation.constraints.NotNull;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
-class INode<K, V> implements Node<K, V> {
-    private static final AtomicReferenceFieldUpdater<INode, MainNode> MAIN_NODE_UPDATER =
-            AtomicReferenceFieldUpdater.newUpdater(INode.class, MainNode.class, "mainNode");
+class IndirectionNode<K, V> implements Node<K, V> {
+    private static final AtomicReferenceFieldUpdater<IndirectionNode, MainNode> MAIN_NODE_UPDATER =
+            AtomicReferenceFieldUpdater.newUpdater(IndirectionNode.class, MainNode.class, "mainNode");
     private volatile MainNode<K, V> mainNode;
 
     private Generation generation;
 
-    INode() {
+    IndirectionNode() {
         this.generation = new Generation();
         this.mainNode = new CNode<>(this.generation);
     }
 
-    INode(Generation generation) {
+    IndirectionNode(Generation generation) {
         this.generation = generation;
         this.mainNode = new CNode<>(this.generation);
     }
 
-    INode(MainNode<K, V> mainNode, Generation generation) {
+    IndirectionNode(MainNode<K, V> mainNode, Generation generation) {
         this.mainNode = mainNode;
         this.generation = generation;
     }
@@ -59,12 +59,12 @@ class INode<K, V> implements Node<K, V> {
      * @param level
      * @param parent
      * @param startGeneration
-     * @param cTrie
+     * @param concurrentTrieMap
      * @return
      */
     @NotNull
-    Either<V, Status> lookup(@NotNull K key, int hashCode, int level, INode<K, V> parent, @NotNull Generation startGeneration, CTrie<K, V> cTrie) {
-        MainNode<K, V> mainNode = this.genCaSRead(cTrie);
+    Either<V, Status> lookup(K key, int hashCode, int level, IndirectionNode<K, V> parent, @NotNull Generation startGeneration, ConcurrentTrieMap<K, V> concurrentTrieMap) {
+        MainNode<K, V> mainNode = this.genCaSRead(concurrentTrieMap);
 
         if (mainNode instanceof CNode) {
             CNode<K, V> cNode = (CNode<K, V>) mainNode;
@@ -79,15 +79,15 @@ class INode<K, V> implements Node<K, V> {
             int pos = (bitmap == 0xffffffff) ? index : Integer.bitCount(bitmap & (flag - 1));
 
             Node<K, V> node = cNode.getChild(pos);
-            if (node instanceof INode) {
-                INode<K, V> iNode = (INode<K, V>) node;
-                if (cTrie.isReadOnly() || (Objects.equals(startGeneration, iNode.generation))) {
-                    // Not found yet, this is an INode, but this is an actual branch, so let's keep moving.
-                    return iNode.lookup(key, hashCode, level + 5, this, startGeneration, cTrie);
+            if (node instanceof IndirectionNode) {
+                IndirectionNode<K, V> indirectionNode = (IndirectionNode<K, V>) node;
+                if (concurrentTrieMap.isReadOnly() || (Objects.equals(startGeneration, indirectionNode.generation))) {
+                    // Not found yet, this is an IndirectionNode, but this is an actual branch, so let's keep moving.
+                    return indirectionNode.lookup(key, hashCode, level + 5, this, startGeneration, concurrentTrieMap);
                 } else {
-                    if (this.genCaS(cNode, cNode.renew(startGeneration, cTrie), cTrie)) {
+                    if (this.genCaS(cNode, cNode.renew(startGeneration, concurrentTrieMap), concurrentTrieMap)) {
                         // Try again!
-                        return this.lookup(key, hashCode, level, parent, startGeneration, cTrie);
+                        return this.lookup(key, hashCode, level, parent, startGeneration, concurrentTrieMap);
                     } else {
                         return Either.right(Status.RESTART);
                     }
@@ -101,7 +101,7 @@ class INode<K, V> implements Node<K, V> {
 
         } else if (mainNode instanceof TombNode) {
             // Tomb node.
-            if (cTrie.isReadOnly()) {
+            if (concurrentTrieMap.isReadOnly()) {
                 // Look for a potential value.
                 TombNode<K, V> tombNode = (TombNode<K, V>) mainNode;
                 if (Objects.equals(tombNode.getKey(), key) && (tombNode.getHashCode() == hashCode)) {
@@ -111,7 +111,7 @@ class INode<K, V> implements Node<K, V> {
                 }
             } else {
                 // Clean and try again.
-                this.clean(parent, cTrie, level - 5);
+                this.clean(parent, concurrentTrieMap, level - 5);
                 return Either.right(Status.RESTART);
             }
         } else if (mainNode instanceof LeafNode) {
@@ -128,13 +128,23 @@ class INode<K, V> implements Node<K, V> {
      * @param level
      * @param parent
      * @param startGeneration
-     * @param cTrie
+     * @param onlyIfAbsent
+     * @param concurrentTrieMap
      * @return
      */
     @NotNull
     @TailRecursive
-    TailCall<Either<V, Status>> insert(@NotNull K key, V value, int hashCode, int level, INode<K, V> parent, @NotNull Generation startGeneration, CTrie<K, V> cTrie) {
-        MainNode<K, V> mainNode = this.genCaSRead(cTrie);
+    TailCall<Either<V, Status>> insert(
+            @NotNull K key,
+            V value,
+            int hashCode,
+            int level,
+            IndirectionNode<K, V> parent,
+            @NotNull Generation startGeneration,
+            boolean onlyIfAbsent,
+            ConcurrentTrieMap<K, V> concurrentTrieMap) {
+
+        MainNode<K, V> mainNode = this.genCaSRead(concurrentTrieMap);
 
         if (mainNode instanceof CNode) {
             CNode<K, V> cNode = (CNode<K, V>) mainNode;
@@ -146,13 +156,13 @@ class INode<K, V> implements Node<K, V> {
 
             if ((bitmap & flag) != 0) {
                 Node<K, V> node = cNode.getChild(pos);
-                if (node instanceof INode) {
-                    INode<K, V> iNode = (INode<K, V>) node;
-                    if (Objects.equals(startGeneration, iNode.getGeneration())) {
-                        return TailCalls.call(() -> iNode.insert(key, value, hashCode, level + 5, this, startGeneration, cTrie));
+                if (node instanceof IndirectionNode) {
+                    IndirectionNode<K, V> indirectionNode = (IndirectionNode<K, V>) node;
+                    if (Objects.equals(startGeneration, indirectionNode.getGeneration())) {
+                        return TailCalls.call(() -> indirectionNode.insert(key, value, hashCode, level + 5, this, startGeneration, onlyIfAbsent, concurrentTrieMap));
                     } else {
-                        if (this.genCaS(cNode, cNode.renew(startGeneration, cTrie), cTrie)) {
-                            return TailCalls.call(() -> this.insert(key, value, hashCode, level, parent, startGeneration, cTrie));
+                        if (this.genCaS(cNode, cNode.renew(startGeneration, concurrentTrieMap), concurrentTrieMap)) {
+                            return TailCalls.call(() -> this.insert(key, value, hashCode, level, parent, startGeneration, onlyIfAbsent, concurrentTrieMap));
                         }
 
                         return TailCalls.done(Either.right(Status.RESTART));
@@ -160,20 +170,31 @@ class INode<K, V> implements Node<K, V> {
                 } else if (node instanceof SingletonNode) {
                     SingletonNode<K, V> singletonNode = (SingletonNode<K, V>) node;
                     if (Objects.equals(singletonNode.getKey(), key) && (singletonNode.getHashCode() == hashCode)) {
-                        if (this.genCaS(cNode, cNode.updateAt(pos, new SingletonNode<>(key, value, hashCode), this.generation), cTrie)) {
+                        if (this.genCaS(cNode, cNode.updateAt(pos, new SingletonNode<>(key, value, hashCode), this.generation), concurrentTrieMap)) {
                             return TailCalls.done(Either.left(singletonNode.getValue()));
                         }
 
                         return TailCalls.done(Either.right(Status.RESTART));
                     } else {
                         // Key didn't exist, new value will be inserted.
-                        CNode<K, V> renewedNode = Objects.equals(cNode.getGeneration(), this.generation) ? cNode : cNode.renew(this.generation, cTrie);
+                        CNode<K, V> renewedNode =
+                                Objects.equals(cNode.getGeneration(), this.generation) ?
+                                        cNode :
+                                        cNode.renew(this.generation, concurrentTrieMap);
                         CNode<K, V> updatedRenewedNode =
                                 renewedNode.updateAt(
                                         pos,
-                                        new INode<>(MainNode.dual(singletonNode, singletonNode.getHashCode(), new SingletonNode<>(key, value, hashCode), hashCode, level + 5, this.generation), this.generation),
+                                        new IndirectionNode<>(
+                                                MainNode.dual(
+                                                        singletonNode,
+                                                        singletonNode.getHashCode(),
+                                                        new SingletonNode<>(key, value, hashCode),
+                                                        hashCode,
+                                                        level + 5,
+                                                        this.generation),
+                                                this.generation),
                                         this.generation);
-                        if (this.genCaS(cNode, updatedRenewedNode, cTrie)) {
+                        if (this.genCaS(cNode, updatedRenewedNode, concurrentTrieMap)) {
                             return TailCalls.done(Either.left(null));
                         }
 
@@ -181,9 +202,15 @@ class INode<K, V> implements Node<K, V> {
                     }
                 }
             } else {
-                CNode<K, V> renewedNode = Objects.equals(cNode.getGeneration(), this.generation) ? cNode : cNode.renew(this.generation, cTrie);
+                CNode<K, V> renewedNode =
+                        Objects.equals(cNode.getGeneration(), this.generation) ?
+                                cNode :
+                                cNode.renew(this.generation, concurrentTrieMap);
 
-                if (this.genCaS(cNode, renewedNode.insertAt(pos, flag, new SingletonNode<>(key, value, hashCode), this.generation), cTrie)) {
+                if (this.genCaS(
+                        cNode,
+                        renewedNode.insertAt(pos, flag, new SingletonNode<>(key, value, hashCode), this.generation),
+                        concurrentTrieMap)) {
                     return TailCalls.done(Either.left(null));
                 }
 
@@ -192,14 +219,14 @@ class INode<K, V> implements Node<K, V> {
 
         } else if (mainNode instanceof TombNode) {
             //
-            this.clean(parent, cTrie, level - 5);
+            this.clean(parent, concurrentTrieMap, level - 5);
             return TailCalls.done(Either.right(Status.RESTART));
         } else if (mainNode instanceof LeafNode) {
             //
             LeafNode<K, V> leafNode = (LeafNode<K, V>) mainNode;
-            LeafNode<K, V> updatedLeafNode = leafNode.insert(key, value);
+            LeafNode<K, V> updatedLeafNode = leafNode.insert(key, value, onlyIfAbsent);
 
-            if (this.genCaS(leafNode, updatedLeafNode, cTrie)) {
+            if (this.genCaS(leafNode, updatedLeafNode, concurrentTrieMap)) {
                 Either<V, Status> previousValue = leafNode.get(key);
                 return TailCalls.done(previousValue.isLeft() ? previousValue : Either.left(null));
             }
@@ -215,17 +242,17 @@ class INode<K, V> implements Node<K, V> {
      * Not quite tail recursive at all, btw, but lazy evaluation always helps a little.
      *
      * @param key
-     * @param value           a value <V>. If not null only pairs containing this key and value. If null, any value linked to the key will be removed.
+     * @param value             a value <V>. If not null only pairs containing this key and value. If null, any value linked to the key will be removed.
      * @param hashCode
      * @param level
      * @param parent
      * @param startGeneration
-     * @param cTrie
+     * @param concurrentTrieMap
      * @return an Either containing the status of the operation, or the removed value.
      */
     @NotNull
-    Either<V, Status> remove(@NotNull K key, V value, int hashCode, int level, INode<K, V> parent, @NotNull Generation startGeneration, CTrie<K, V> cTrie) {
-        MainNode<K, V> mainNode = this.genCaSRead(cTrie);
+    Either<V, Status> remove(@NotNull K key, V value, int hashCode, int level, IndirectionNode<K, V> parent, @NotNull Generation startGeneration, ConcurrentTrieMap<K, V> concurrentTrieMap) {
+        MainNode<K, V> mainNode = this.genCaSRead(concurrentTrieMap);
 
         if (mainNode instanceof CNode) {
             CNode<K, V> cNode = (CNode<K, V>) mainNode;
@@ -242,14 +269,14 @@ class INode<K, V> implements Node<K, V> {
             Node<K, V> childNode = cNode.getChild(pos);
             Either<V, Status> result;
 
-            if (childNode instanceof INode) {
-                INode<K, V> iNode = (INode<K, V>) childNode;
+            if (childNode instanceof IndirectionNode) {
+                IndirectionNode<K, V> indirectionNode = (IndirectionNode<K, V>) childNode;
 
-                if (Objects.equals(startGeneration, iNode.getGeneration())) {
-                    result = iNode.remove(key, value, hashCode, level + 5, this, startGeneration, cTrie);
+                if (Objects.equals(startGeneration, indirectionNode.getGeneration())) {
+                    result = indirectionNode.remove(key, value, hashCode, level + 5, this, startGeneration, concurrentTrieMap);
                 } else {
-                    if (this.genCaS(cNode, cNode.renew(startGeneration, cTrie), cTrie)) {
-                        result = this.remove(key, value, hashCode, level, parent, startGeneration, cTrie);
+                    if (this.genCaS(cNode, cNode.renew(startGeneration, concurrentTrieMap), concurrentTrieMap)) {
+                        result = this.remove(key, value, hashCode, level, parent, startGeneration, concurrentTrieMap);
                     } else {
                         result = Either.right(Status.RESTART);
                     }
@@ -262,7 +289,7 @@ class INode<K, V> implements Node<K, V> {
                         ((value == null) || (Objects.equals(value, singletonNode.getValue())))) {
                     MainNode<K, V> updatedNode =
                             cNode.removeAt(pos, flag, this.generation).contract(level);
-                    if (this.genCaS(cNode, updatedNode, cTrie)) {
+                    if (this.genCaS(cNode, updatedNode, concurrentTrieMap)) {
                         result = Either.left(singletonNode.getValue());
                     } else {
                         result = Either.right(Status.RESTART);
@@ -279,16 +306,16 @@ class INode<K, V> implements Node<K, V> {
             }
 
             if (Objects.nonNull(parent)) {
-                Node<K, V> node = this.genCaSRead(cTrie);
+                Node<K, V> node = this.genCaSRead(concurrentTrieMap);
                 if (node instanceof TombNode) {
-                    this.cleanParent(hashCode, level, node, parent, startGeneration, cTrie).invoke();
+                    this.cleanParent(hashCode, level, node, parent, startGeneration, concurrentTrieMap).invoke();
                 }
             }
 
             return result;
 
         } else if (mainNode instanceof TombNode) {
-            this.clean(parent, cTrie, level - 5);
+            this.clean(parent, concurrentTrieMap, level - 5);
             return Either.right(Status.RESTART);
         } else if (mainNode instanceof LeafNode) {
             LeafNode<K, V> leafNode = (LeafNode<K, V>) mainNode;
@@ -300,7 +327,7 @@ class INode<K, V> implements Node<K, V> {
                     // Some value found.
                     MainNode<K, V> updatedNode = leafNode.remove(key);
 
-                    if (this.genCaS(leafNode, updatedNode, cTrie)) {
+                    if (this.genCaS(leafNode, updatedNode, concurrentTrieMap)) {
                         return potentialLeafNodeValue;
                     }
 
@@ -318,7 +345,7 @@ class INode<K, V> implements Node<K, V> {
                     if (Objects.equals(value, storedValue)) {
                         MainNode<K, V> updatedNode = leafNode.remove(key);
 
-                        if (!this.genCaS(leafNode, updatedNode, cTrie)) {
+                        if (!this.genCaS(leafNode, updatedNode, concurrentTrieMap)) {
                             return Either.right(Status.RESTART);
                         }
                     }
@@ -333,21 +360,21 @@ class INode<K, V> implements Node<K, V> {
     }
 
     /**
-     * Get the current main node of this INode.
+     * Get the current main node of this IndirectionNode.
      *
-     * @param cTrie the current CTrie structure where this INode lives.
-     * @return the current main node of this INode.
+     * @param concurrentTrieMap the current ConcurrentTrieMap structure where this IndirectionNode lives.
+     * @return the current main node of this IndirectionNode.
      */
-    MainNode<K, V> genCaSRead(@NotNull CTrie<K, V> cTrie) {
+    MainNode<K, V> genCaSRead(@NotNull ConcurrentTrieMap<K, V> concurrentTrieMap) {
         @SuppressWarnings("unchecked")
-        MainNode<K, V> mainNode = (MainNode<K, V>) INode.MAIN_NODE_UPDATER.get(this);
+        MainNode<K, V> mainNode = (MainNode<K, V>) IndirectionNode.MAIN_NODE_UPDATER.get(this);
         MainNode<K, V> previousMainNode = mainNode.readPrevious();
 
         if (Objects.isNull(previousMainNode)) {
             return mainNode;
         }
 
-        return this.genCaSCommit(mainNode, cTrie);
+        return this.genCaSCommit(mainNode, concurrentTrieMap);
     }
 
     /*
@@ -356,91 +383,91 @@ class INode<K, V> implements Node<K, V> {
      * Once it finds a place, it's committed.
      *
      * @param node the node being committed.
-     * @param cTrie the current CTrie structure where this INode lives.
+     * @param concurrentTrieMap the current ConcurrentTrieMap structure where this IndirectionNode lives.
      * @return the committed node.
      */
-    private MainNode<K, V> genCaSCommit(MainNode<K, V> node, @NotNull CTrie<K, V> cTrie) {
+    private MainNode<K, V> genCaSCommit(MainNode<K, V> node, @NotNull ConcurrentTrieMap<K, V> concurrentTrieMap) {
         if (Objects.isNull(node)) {
             return null;
         }
 
         MainNode<K, V> previousNode = node.readPrevious();
-        INode<K, V> cTrieRoot = cTrie.rdcssReadRoot(true);
+        IndirectionNode<K, V> cTrieRoot = concurrentTrieMap.rdcssReadRoot(true);
 
         if (Objects.isNull(previousNode)) {
             return node;
         } else if (previousNode instanceof FailedNode) {
             FailedNode<K, V> failedNode = (FailedNode<K, V>) previousNode;
-            if (INode.MAIN_NODE_UPDATER.compareAndSet(this, node, failedNode.readPrevious())) {
+            if (IndirectionNode.MAIN_NODE_UPDATER.compareAndSet(this, node, failedNode.readPrevious())) {
                 return failedNode.readPrevious();
             } else {
                 @SuppressWarnings("unchecked")
-                MainNode<K, V> mainNode = (MainNode<K, V>) INode.MAIN_NODE_UPDATER.get(this);
-                return this.genCaSCommit(mainNode, cTrie);
+                MainNode<K, V> mainNode = (MainNode<K, V>) IndirectionNode.MAIN_NODE_UPDATER.get(this);
+                return this.genCaSCommit(mainNode, concurrentTrieMap);
             }
         } else {
-            if (Objects.equals(cTrieRoot.generation, this.generation) && !cTrie.isReadOnly()) {
+            if (Objects.equals(cTrieRoot.generation, this.generation) && !concurrentTrieMap.isReadOnly()) {
                 return
                         node.casPrevious(previousNode, null) ?
                                 node :
-                                this.genCaSCommit(node, cTrie);
+                                this.genCaSCommit(node, concurrentTrieMap);
             } else {
                 node.casPrevious(previousNode, new FailedNode<>(previousNode));
 
                 @SuppressWarnings("unchecked")
-                MainNode<K, V> mainNode = (MainNode<K, V>) INode.MAIN_NODE_UPDATER.get(this);
-                return this.genCaSCommit(mainNode, cTrie);
+                MainNode<K, V> mainNode = (MainNode<K, V>) IndirectionNode.MAIN_NODE_UPDATER.get(this);
+                return this.genCaSCommit(mainNode, concurrentTrieMap);
             }
         }
     }
 
     /*
      * Generational compare and set.
-     * Set the value of the current INode main node.
+     * Set the value of the current IndirectionNode main node.
      *
-     * @param oldNode the previous value of this INode main node.
-     * @param newNode the proposed new value of this INode main node.
-     * @param cTrie the current CTrie structure where this INode lives.
+     * @param oldNode the previous value of this IndirectionNode main node.
+     * @param newNode the proposed new value of this IndirectionNode main node.
+     * @param concurrentTrieMap the current ConcurrentTrieMap structure where this IndirectionNode lives.
      * @return true if the operation succeeds, false otherwise.
      */
-    private boolean genCaS(MainNode<K, V> oldNode, MainNode<K, V> newNode, CTrie<K, V> cTrie) {
+    private boolean genCaS(MainNode<K, V> oldNode, MainNode<K, V> newNode, ConcurrentTrieMap<K, V> concurrentTrieMap) {
         newNode.writePrevious(oldNode);
 
-        if (INode.MAIN_NODE_UPDATER.compareAndSet(this, oldNode, newNode)) {
-            this.genCaSCommit(newNode, cTrie);
+        if (IndirectionNode.MAIN_NODE_UPDATER.compareAndSet(this, oldNode, newNode)) {
+            this.genCaSCommit(newNode, concurrentTrieMap);
             return Objects.isNull(newNode.readPrevious());
         }
         return false;
     }
 
     /**
-     * Copy the current INode to a new generation.
+     * Copy the current IndirectionNode to a new generation.
      *
-     * @param generation the generation this INode is being copied to.
-     * @param cTrie      the current CTrie.
-     * @return the newly copied INode.
+     * @param generation        the generation this IndirectionNode is being copied to.
+     * @param concurrentTrieMap the current ConcurrentTrieMap.
+     * @return the newly copied IndirectionNode.
      */
-    INode<K, V> copyToGeneration(Generation generation, CTrie<K, V> cTrie) {
-        INode<K, V> newINode = new INode<>(generation);
-        MainNode<K, V> mainNode = this.genCaSRead(cTrie);
+    IndirectionNode<K, V> copyToGeneration(Generation generation, ConcurrentTrieMap<K, V> concurrentTrieMap) {
+        IndirectionNode<K, V> newIndirectionNode = new IndirectionNode<>(generation);
+        MainNode<K, V> mainNode = this.genCaSRead(concurrentTrieMap);
 
-        INode.MAIN_NODE_UPDATER.set(newINode, mainNode);
+        IndirectionNode.MAIN_NODE_UPDATER.set(newIndirectionNode, mainNode);
 
-        return newINode;
+        return newIndirectionNode;
     }
 
 
     /*
      *
      * @param parent
-     * @param cTrie
+     * @param concurrentTrieMap
      * @param level
      */
-    private void clean(INode<K, V> parent, CTrie<K, V> cTrie, int level) {
-        MainNode<K, V> mainNode = parent.genCaSRead(cTrie);
+    private void clean(IndirectionNode<K, V> parent, ConcurrentTrieMap<K, V> concurrentTrieMap, int level) {
+        MainNode<K, V> mainNode = parent.genCaSRead(concurrentTrieMap);
         if (mainNode instanceof CNode) {
             CNode<K, V> cNode = (CNode<K, V>) mainNode;
-            parent.genCaS(cNode, cNode.compress(cTrie, level, this.generation), cTrie);
+            parent.genCaS(cNode, cNode.compress(concurrentTrieMap, level, this.generation), concurrentTrieMap);
         }
     }
 
@@ -451,11 +478,11 @@ class INode<K, V> implements Node<K, V> {
      * @param nonLiveNode
      * @param parent
      * @param startGeneration
-     * @param cTrie
+     * @param concurrentTrieMap
      */
     @TailRecursive
-    private TailCall<Void> cleanParent(int hashCode, int level, Object nonLiveNode, INode<K, V> parent, @NotNull Generation startGeneration, CTrie<K, V> cTrie) {
-        MainNode<K, V> parentMainNode = parent.genCaSRead(cTrie);
+    private TailCall<Void> cleanParent(int hashCode, int level, Object nonLiveNode, IndirectionNode<K, V> parent, @NotNull Generation startGeneration, ConcurrentTrieMap<K, V> concurrentTrieMap) {
+        MainNode<K, V> parentMainNode = parent.genCaSRead(concurrentTrieMap);
 
         if (parentMainNode instanceof CNode) {
             CNode<K, V> cNode = (CNode<K, V>) parentMainNode;
@@ -480,10 +507,10 @@ class INode<K, V> implements Node<K, V> {
                                     .updateAt(pos, new SingletonNode<>(tombNode), this.generation)
                                     .contract(level - 5);
 
-                    if (!parent.genCaS(cNode, updatedCNode, cTrie)) {
-                        if (Objects.equals(cTrie.rdcssReadRoot().getGeneration(), startGeneration)) {
+                    if (!parent.genCaS(cNode, updatedCNode, concurrentTrieMap)) {
+                        if (Objects.equals(concurrentTrieMap.rdcssReadRoot().getGeneration(), startGeneration)) {
                             TailCalls.call(() ->
-                                    this.cleanParent(hashCode, level, nonLiveNode, parent, startGeneration, cTrie));
+                                    this.cleanParent(hashCode, level, nonLiveNode, parent, startGeneration, concurrentTrieMap));
                         }
                     }
                 }

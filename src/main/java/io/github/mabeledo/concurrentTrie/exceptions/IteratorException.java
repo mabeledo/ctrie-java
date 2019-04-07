@@ -17,39 +17,10 @@
  * under the License.
  */
 
-package io.github.mabeledo.ctrie;
+package io.github.mabeledo.concurrentTrie.exceptions;
 
-import javax.validation.constraints.NotNull;
-
-/**
- * Singleton node.
- * @param <K>
- * @param <V>
- */
-class SingletonNode<K, V> implements Node<K, V> {
-    private final K key;
-    private final V value;
-    private final int hashCode;
-
-    SingletonNode(@NotNull K key, V value, int hashCode) {
-        this.key = key;
-        this.value = value;
-        this.hashCode = hashCode;
+public class IteratorException extends Exception {
+    public IteratorException(String message) {
+        super(message);
     }
-
-    SingletonNode(@NotNull TombNode<K, V> tombNode) {
-        this.key = tombNode.getKey();
-        this.value = tombNode.getValue();
-        this.hashCode = tombNode.getHashCode();
-    }
-
-    public K getKey() {
-        return this.key;
-    }
-
-    public V getValue() {
-        return this.value;
-    }
-
-    int getHashCode() { return this.hashCode; }
 }

@@ -1,5 +1,5 @@
 # ctrie-java
-A Java implementation of the concurrent trie described by [Prokopec, Bronson, Bagwell, and Odersky](http://aleksandar-prokopec.com/resources/docs/ctries-snapshot.pdf).
+A Java implementation of a map backed by a concurrent trie, as described by [Prokopec, Bronson, Bagwell, and Odersky](http://aleksandar-prokopec.com/resources/docs/ctries-snapshot.pdf).
 
 According to Wikipedia:
 
@@ -7,9 +7,12 @@ According to Wikipedia:
 
 This is work in progress.
 
+- ✅ Map interface
 - ✅ Lookup
 - ✅ Insertion
 - ✅ Removal
-- ❌ Snapshots (tests pending)
+- ❌ Complex operations (computeIfAbsent, putIfPresent, etc.)
+- ❌ Snapshots
 - ❌ Performance tests
-- ❌ Concurrency tests
+- ❌ Concurrency (integration) tests
+

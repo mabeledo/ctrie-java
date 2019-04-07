@@ -17,32 +17,7 @@
  * under the License.
  */
 
-package io.github.mabeledo.ctrie;
+package io.github.mabeledo.concurrentTrie;
 
-/*
- * From Subramaniam, Venkat, "Functional Programming in Java".
- */
-class TailCalls {
-    static <T> TailCall<T> call(final TailCall<T> nextCall) {
-        return nextCall;
-    }
-
-    static <T> TailCall<T> done(final T value) {
-        return new TailCall<>() {
-            @Override
-            public boolean isComplete() {
-                return true;
-            }
-
-            @Override
-            public T result() {
-                return value;
-            }
-
-            @Override
-            public TailCall<T> apply() throws Error {
-                throw new Error("Method not implemented.");
-            }
-        };
-    }
+public class EitherTest {
 }

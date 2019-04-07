@@ -17,9 +17,28 @@
  * under the License.
  */
 
-package io.github.mabeledo.ctrie;
+package io.github.mabeledo.concurrentTrie;
 
-interface Node<K, V> {
-    default K getKey() { throw new UnsupportedOperationException(); }
-    default V getValue() { throw new UnsupportedOperationException(); }
+import org.junit.jupiter.api.Test;
+
+class IndirectionNodeTest {
+    @Test
+    void lookup() {
+
+    }
+
+    @Test
+    void insert() {
+
+    }
+
+    @Test
+    void genCaSRead() {
+
+    }
+
+    @Test
+    void copyToGen() {
+
+    }
 }

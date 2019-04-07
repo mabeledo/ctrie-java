@@ -17,7 +17,7 @@
  * under the License.
  */
 
-package io.github.mabeledo.ctrie;
+package io.github.mabeledo.concurrentTrie;
 
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
@@ -73,12 +73,12 @@ abstract class MainNode<K, V> implements Node<K, V> {
             int bitmap = (1 << leftIndex) | (1 << rightIndex);
 
             if (leftIndex == rightIndex) {
-                INode<K, V> subINode =
-                        new INode<>(
+                IndirectionNode<K, V> subIndirectionNode =
+                        new IndirectionNode<>(
                                 dual(leftNode, leftHashCode, rightNode, rightHashCode, level + 5, generation),
                                 generation);
                 @SuppressWarnings("unchecked")
-                CNode<K, V> cNode = new CNode<K, V>(bitmap, new Node[]{subINode}, generation);
+                CNode<K, V> cNode = new CNode<K, V>(bitmap, new Node[]{subIndirectionNode}, generation);
                 return cNode;
             } else {
                 if (leftIndex < rightIndex) {

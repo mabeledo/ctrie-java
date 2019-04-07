@@ -1,4 +1,4 @@
-package io.github.mabeledo.ctrie;
+package io.github.mabeledo.concurrentTrie;
 
 public enum Status {
     OK,

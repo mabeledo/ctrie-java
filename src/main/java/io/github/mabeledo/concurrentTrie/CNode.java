@@ -17,9 +17,8 @@
  * under the License.
  */
 
-package io.github.mabeledo.ctrie;
+package io.github.mabeledo.concurrentTrie;
 
-import java.util.Arrays;
 import java.util.Objects;
 
 class CNode<K, V> extends MainNode<K, V> {
@@ -27,6 +26,7 @@ class CNode<K, V> extends MainNode<K, V> {
     private final Node<K, V>[] array;
     private final Generation generation;
 
+    @SuppressWarnings("unchecked")
     CNode(Generation generation) {
         this(0, new Node[0], generation);
     }
@@ -73,16 +73,16 @@ class CNode<K, V> extends MainNode<K, V> {
 
     /**
      *
-     * @param iNode
+     * @param indirectionNode
      * @param iNodeMain
      * @return
      */
-    Node<K, V> resurrect(INode<K, V> iNode, Node<K, V> iNodeMain) {
+    Node<K, V> resurrect(IndirectionNode<K, V> indirectionNode, Node<K, V> iNodeMain) {
         if (iNodeMain instanceof TombNode) {
             TombNode<K, V> tombNode = (TombNode<K, V>)iNodeMain;
             return new SingletonNode<>(tombNode);
         }
-        return iNode;
+        return indirectionNode;
     }
 
     /**
@@ -102,24 +102,24 @@ class CNode<K, V> extends MainNode<K, V> {
 
     /**
      *
-     * @param cTrie
+     * @param concurrentTrieMap
      * @param level
      * @param generation
      * @return
      */
-    MainNode<K, V> compress(CTrie<K, V> cTrie, int level, Generation generation) {
+    MainNode<K, V> compress(ConcurrentTrieMap<K, V> concurrentTrieMap, int level, Generation generation) {
         int bitmap = this.bitmap;
         @SuppressWarnings("unchecked")
         Node<K, V>[] updatedArray = new Node[this.array.length];
 
         for (int i = 0; i < this.array.length; i++) {
             Node<K, V> node = this.array[i];
-            if (node instanceof INode){
-                INode<K, V> iNode = (INode<K, V>)node;
-                Node<K, V> iNodeMain = iNode.genCaSRead(cTrie);
+            if (node instanceof IndirectionNode){
+                IndirectionNode<K, V> indirectionNode = (IndirectionNode<K, V>)node;
+                Node<K, V> iNodeMain = indirectionNode.genCaSRead(concurrentTrieMap);
                 // TODO: check for null values!
                 if (Objects.nonNull(iNodeMain)) {
-                    updatedArray[i] = this.resurrect(iNode, iNodeMain);
+                    updatedArray[i] = this.resurrect(indirectionNode, iNodeMain);
                 }
             } else if (node instanceof SingletonNode) {
                 SingletonNode<K, V> singletonNode = (SingletonNode<K, V>)node;
@@ -189,18 +189,18 @@ class CNode<K, V> extends MainNode<K, V> {
      * to the specified generation.
      *
      * @param generation
-     * @param cTrie
+     * @param concurrentTrieMap
      * @return
      */
-    CNode<K, V> renew(Generation generation, CTrie<K, V> cTrie) {
+    CNode<K, V> renew(Generation generation, ConcurrentTrieMap<K, V> concurrentTrieMap) {
         int currentArrayLength = array.length;
         @SuppressWarnings("unchecked")
         Node<K, V>[] newArray = new Node[currentArrayLength];
 
         for (int i = 0; i < currentArrayLength; i++) {
             Node<K, V> node = this.array[i];
-            if (node instanceof INode) {
-                newArray[i] = ((INode<K, V>)node).copyToGeneration(generation, cTrie);
+            if (node instanceof IndirectionNode) {
+                newArray[i] = ((IndirectionNode<K, V>)node).copyToGeneration(generation, concurrentTrieMap);
             } else {
                 newArray[i] = node;
             }

@@ -17,7 +17,37 @@
  * under the License.
  */
 
-package io.github.mabeledo.ctrie;
+package io.github.mabeledo.concurrentTrie;
 
-public class EitherTest {
+import javax.validation.constraints.NotNull;
+
+class TombNode<K, V> extends MainNode<K, V> {
+    private final K key;
+    private final V value;
+    private final int hashCode;
+
+    TombNode(@NotNull K key, V value, int hashCode) {
+        this.key = key;
+        this.value = value;
+        this.hashCode = hashCode;
+    }
+
+    TombNode(@NotNull SingletonNode<K, V> singletonNode) {
+        this.key = singletonNode.getKey();
+        this.value = singletonNode.getValue();
+        this.hashCode = singletonNode.getHashCode();
+    }
+
+    @NotNull
+    public K getKey() {
+        return this.key;
+    }
+
+    public V getValue() {
+        return this.value;
+    }
+
+    int getHashCode() {
+        return this.hashCode;
+    }
 }

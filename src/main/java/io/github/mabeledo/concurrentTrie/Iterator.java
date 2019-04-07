@@ -17,31 +17,30 @@
  * under the License.
  */
 
-package io.github.mabeledo.ctrie;
+package io.github.mabeledo.concurrentTrie;
 
-import io.github.mabeledo.ctrie.exceptions.CTrieIteratorException;
+import io.github.mabeledo.concurrentTrie.exceptions.IteratorException;
 
-import java.util.Iterator;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 
-class CTrieIterator<K, V> implements Iterator<Node<K, V>> {
-    private CTrie<K, V> cTrie;
+class Iterator<K, V> implements java.util.Iterator<Node<K, V>> {
+    private ConcurrentTrieMap<K, V> concurrentTrieMap;
     private Node<K, V>[][] stack;
     private int[] stackPos;
     private int depth;
-    private Iterator<Node<K, V>> subIterator;
+    private java.util.Iterator<Node<K, V>> subIterator;
     private Node<K, V> currentNode;
     private AtomicInteger tombCounter = new AtomicInteger(0);
 
     @SuppressWarnings("unchecked")
-    CTrieIterator(CTrie<K, V> cTrie) throws CTrieIteratorException {
-        if (!cTrie.isReadOnly()) {
-            throw new CTrieIteratorException("CTrie is not marked as read only!");
+    Iterator(ConcurrentTrieMap<K, V> concurrentTrieMap) throws IteratorException {
+        if (!concurrentTrieMap.isReadOnly()) {
+            throw new IteratorException("ConcurrentTrieMap is not marked as read only!");
         }
 
-        this.cTrie = cTrie;
+        this.concurrentTrieMap = concurrentTrieMap;
         this.stack = new Node[7][];
         this.stackPos = new int[7];
         this.depth = -1;
@@ -51,7 +50,7 @@ class CTrieIterator<K, V> implements Iterator<Node<K, V>> {
         this.initialize();
     }
 
-    private CTrieIterator() {
+    private Iterator() {
     }
 
     @Override
@@ -89,24 +88,24 @@ class CTrieIterator<K, V> implements Iterator<Node<K, V>> {
      * @param <V>
      * @return
      */
-    static <K, V>  CTrieIterator<K, V> empty() {
-        return new CTrieIterator<>();
+    static <K, V> Iterator<K, V> empty() {
+        return new Iterator<>();
     }
 
     /*
      *
      */
     private void initialize() {
-        this.readINode(this.cTrie.rdcssReadRoot()).invoke();
+        this.readINode(this.concurrentTrieMap.rdcssReadRoot()).invoke();
     }
 
     /*
      *
-     * @param iNode
+     * @param indirectionNode
      */
     @TailRecursive
-    private TailCall<Boolean> readINode(INode<K, V> iNode) {
-        MainNode<K, V> mainNode = iNode.genCaSRead(this.cTrie);
+    private TailCall<Boolean> readINode(IndirectionNode<K, V> indirectionNode) {
+        MainNode<K, V> mainNode = indirectionNode.genCaSRead(this.concurrentTrieMap);
         if (Objects.isNull(mainNode)) {
             this.currentNode = null;
 
@@ -149,8 +148,8 @@ class CTrieIterator<K, V> implements Iterator<Node<K, V>> {
                 if (node instanceof SingletonNode) {
                     this.currentNode = node;
 
-                } else if (node instanceof INode) {
-                    return this.readINode((INode<K, V>) node);
+                } else if (node instanceof IndirectionNode) {
+                    return this.readINode((IndirectionNode<K, V>) node);
                 }
 
             } else {

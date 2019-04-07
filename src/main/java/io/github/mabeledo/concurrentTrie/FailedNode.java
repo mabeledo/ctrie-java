@@ -17,7 +17,10 @@
  * under the License.
  */
 
-package io.github.mabeledo.ctrie;
+package io.github.mabeledo.concurrentTrie;
 
-public class Generation {
+class FailedNode<K, V> extends MainNode<K, V> {
+    FailedNode(MainNode<K, V> previous) {
+        this.writePrevious(previous);
+    }
 }
