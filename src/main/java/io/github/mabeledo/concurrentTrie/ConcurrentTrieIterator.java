@@ -21,11 +21,12 @@ package io.github.mabeledo.concurrentTrie;
 
 import io.github.mabeledo.concurrentTrie.exceptions.IteratorException;
 
+import java.util.Iterator;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 
-class Iterator<K, V> implements java.util.Iterator<Node<K, V>> {
+class ConcurrentTrieIterator<K, V> implements Iterator<Node<K, V>> {
     private ConcurrentTrieMap<K, V> concurrentTrieMap;
     private Node<K, V>[][] stack;
     private int[] stackPos;
@@ -35,7 +36,7 @@ class Iterator<K, V> implements java.util.Iterator<Node<K, V>> {
     private AtomicInteger tombCounter = new AtomicInteger(0);
 
     @SuppressWarnings("unchecked")
-    Iterator(ConcurrentTrieMap<K, V> concurrentTrieMap) throws IteratorException {
+    ConcurrentTrieIterator(ConcurrentTrieMap<K, V> concurrentTrieMap) throws IteratorException {
         if (!concurrentTrieMap.isReadOnly()) {
             throw new IteratorException("ConcurrentTrieMap is not marked as read only!");
         }
@@ -50,7 +51,7 @@ class Iterator<K, V> implements java.util.Iterator<Node<K, V>> {
         this.initialize();
     }
 
-    private Iterator() {
+    private ConcurrentTrieIterator() {
     }
 
     @Override
@@ -88,8 +89,8 @@ class Iterator<K, V> implements java.util.Iterator<Node<K, V>> {
      * @param <V>
      * @return
      */
-    static <K, V> Iterator<K, V> empty() {
-        return new Iterator<>();
+    static <K, V> ConcurrentTrieIterator<K, V> empty() {
+        return new ConcurrentTrieIterator<>();
     }
 
     /*

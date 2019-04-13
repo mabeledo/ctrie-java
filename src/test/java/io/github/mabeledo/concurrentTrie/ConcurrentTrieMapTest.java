@@ -38,17 +38,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ConcurrentTrieMapTest {
     @Test
     void putAndGet() {
-        ConcurrentTrieMap<String, Long> concurrentTrieMap = new ConcurrentTrieMap<>();
-        List<AbstractMap.SimpleEntry<String, Long>> keyValueList =
-                IntStream.range(1, 10_000_001)
-                        .mapToObj(p ->
-                                new AbstractMap.SimpleEntry<>(
-                                        "entry-" + ThreadLocalRandom.current().nextInt(p),
-                                        ThreadLocalRandom.current().nextLong()))
-                        .collect(Collectors.toList());
-        Map<String, Long> keyValueMap = keyValueList.stream()
-                .collect(Collectors.toMap(
-                        AbstractMap.SimpleEntry::getKey, AbstractMap.SimpleEntry::getValue, (p, q) -> q));
+        List<Map.Entry<String, Long>> keyValueList = this.generateKeyValueList(10_000_001);
+        Map<String, Long> keyValueMap = this.generateKeyValueMap(keyValueList);
+        ConcurrentTrieMap<String, Long> concurrentTrieMap = this.generateConcurrentTrieMap(keyValueList);
 
         keyValueList.forEach(p -> concurrentTrieMap.put(p.getKey(), p.getValue()));
 
@@ -130,19 +122,9 @@ class ConcurrentTrieMapTest {
 
     @Test
     void remove() {
-        ConcurrentTrieMap<String, Long> concurrentTrieMap = new ConcurrentTrieMap<>();
-        List<Map.Entry<String, Long>> keyValueList =
-                IntStream.range(1, 10_000_001)
-                        .mapToObj(p ->
-                                new AbstractMap.SimpleEntry<>(
-                                        "entry-" + ThreadLocalRandom.current().nextInt(p),
-                                        ThreadLocalRandom.current().nextLong()))
-                        .collect(Collectors.toList());
-        Map<String, Long> keyValueMap = keyValueList.stream()
-                .collect(Collectors.toMap(
-                        Map.Entry::getKey, Map.Entry::getValue, (p, q) -> q));
-
-        keyValueList.forEach(p -> concurrentTrieMap.put(p.getKey(), p.getValue()));
+        List<Map.Entry<String, Long>> keyValueList = this.generateKeyValueList(10_000_001);
+        Map<String, Long> keyValueMap = this.generateKeyValueMap(keyValueList);
+        ConcurrentTrieMap<String, Long> concurrentTrieMap = this.generateConcurrentTrieMap(keyValueList);
 
         // Remove some randomly.
         List<Map.Entry<String, Long>> updatedKeyValueList =
@@ -178,17 +160,47 @@ class ConcurrentTrieMapTest {
     }
 
     @Test
+    void snapshots() {
+        List<Map.Entry<String, Long>> keyValueList = this.generateKeyValueList(10_000_001);
+        Map<String, Long> keyValueMap = this.generateKeyValueMap(keyValueList);
+        ConcurrentTrieMap<String, Long> concurrentTrieMap = this.generateConcurrentTrieMap(keyValueList);
+
+        // Create two snapshots and update both, then compare.
+        ConcurrentTrieMap<String, Long> firstSnapshot = concurrentTrieMap.snapshot(false);
+        ConcurrentTrieMap<String, Long> secondSnapshot = concurrentTrieMap.snapshot(false);
+
+
+    }
+
+    @Test
     void iterator() {
 
     }
 
     @Test
-    void collisions() {
-
+    void collector() {
+        
     }
 
-    @Test
-    void snapshots() {
+    private List<Map.Entry<String, Long>> generateKeyValueList(int size) {
+        return IntStream.range(1, size)
+                .mapToObj(p ->
+                        new AbstractMap.SimpleEntry<>(
+                                "entry-" + ThreadLocalRandom.current().nextInt(p),
+                                ThreadLocalRandom.current().nextLong()))
+                .collect(Collectors.toList());
+    }
 
+    private Map<String, Long> generateKeyValueMap(List<Map.Entry<String, Long>> keyValueList) {
+        return keyValueList.stream()
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey, Map.Entry::getValue, (p, q) -> q));
+    }
+
+    private ConcurrentTrieMap<String, Long> generateConcurrentTrieMap(List<Map.Entry<String, Long>> keyValueList) {
+        ConcurrentTrieMap<String, Long> concurrentTrieMap = new ConcurrentTrieMap<>();
+        keyValueList.forEach(p -> concurrentTrieMap.put(p.getKey(), p.getValue()));
+
+        return concurrentTrieMap;
     }
 }

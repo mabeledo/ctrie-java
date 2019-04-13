@@ -29,6 +29,8 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
+import java.util.function.Function;
+import java.util.stream.Collector;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
@@ -72,7 +74,6 @@ public class ConcurrentTrieMap<K, V> implements Map<K, V>, Iterable<Node<K, V>> 
     }
 
     /**
-     *
      * @param key
      * @return
      * @throws NullPointerException
@@ -90,7 +91,6 @@ public class ConcurrentTrieMap<K, V> implements Map<K, V>, Iterable<Node<K, V>> 
     }
 
     /**
-     *
      * @param value
      * @return
      */
@@ -139,7 +139,6 @@ public class ConcurrentTrieMap<K, V> implements Map<K, V>, Iterable<Node<K, V>> 
     }
 
     /**
-     *
      * @param key
      * @param value
      * @return
@@ -153,7 +152,6 @@ public class ConcurrentTrieMap<K, V> implements Map<K, V>, Iterable<Node<K, V>> 
     }
 
     /**
-     *
      * @param map
      */
     @Override
@@ -181,7 +179,7 @@ public class ConcurrentTrieMap<K, V> implements Map<K, V>, Iterable<Node<K, V>> 
         do {
             result =
                     root
-                            .insert(key, value, hashCode, 0, null, root.getGeneration(), onlyIfAbsent,this)
+                            .insert(key, value, hashCode, 0, null, root.getGeneration(), onlyIfAbsent, this)
                             .invoke();
         } while (result.isRight() && result.right().equals(Status.RESTART));
 
@@ -196,7 +194,6 @@ public class ConcurrentTrieMap<K, V> implements Map<K, V>, Iterable<Node<K, V>> 
     }
 
     /**
-     *
      * @param key
      * @return
      * @throws NullPointerException
@@ -247,11 +244,12 @@ public class ConcurrentTrieMap<K, V> implements Map<K, V>, Iterable<Node<K, V>> 
     }
 
     /**
-     *
      * @return
      */
     @Override
-    public boolean isEmpty() { return this.size.get() != 0; }
+    public boolean isEmpty() {
+        return this.size.get() != 0;
+    }
 
     /**
      *
@@ -277,7 +275,6 @@ public class ConcurrentTrieMap<K, V> implements Map<K, V>, Iterable<Node<K, V>> 
     }
 
     /**
-     *
      * @return
      */
     @Override
@@ -288,7 +285,6 @@ public class ConcurrentTrieMap<K, V> implements Map<K, V>, Iterable<Node<K, V>> 
     }
 
     /**
-     *
      * @return
      */
     @Override
@@ -299,7 +295,6 @@ public class ConcurrentTrieMap<K, V> implements Map<K, V>, Iterable<Node<K, V>> 
     }
 
     /**
-     *
      * @return
      */
     @Override
@@ -314,6 +309,26 @@ public class ConcurrentTrieMap<K, V> implements Map<K, V>, Iterable<Node<K, V>> 
      */
     public Stream<Node<K, V>> stream() {
         return StreamSupport.stream(this.spliterator(), false);
+    }
+
+    /**
+     *
+     * @param keyMapper
+     * @param valueMapper
+     * @param <T>
+     * @param <K>
+     * @param <V>
+     * @return
+     */
+    public static <T, K, V> Collector<T, ?, ConcurrentTrieMap<K, V>> collector(Function<? super T, K> keyMapper, Function<? super T, V> valueMapper) {
+        return Collector.of(
+                ConcurrentTrieMap::new,
+                (p, q) -> p.put(keyMapper.apply(q), valueMapper.apply(q)),
+                (r, s) -> {
+                    r.putAll(s);
+                    return r;
+                }
+        );
     }
 
     /**
@@ -351,9 +366,9 @@ public class ConcurrentTrieMap<K, V> implements Map<K, V>, Iterable<Node<K, V>> 
         }
 
         try {
-            return new Iterator<>(this);
+            return new ConcurrentTrieIterator<>(this);
         } catch (IteratorException cti) {
-            return Iterator.empty();
+            return ConcurrentTrieIterator.empty();
         }
     }
 
