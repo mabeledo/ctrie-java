@@ -23,11 +23,11 @@ import io.github.mabeledo.concurrentTrie.exceptions.IteratorException;
 
 import java.util.AbstractMap;
 import java.util.Collection;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import java.util.function.Function;
 import java.util.stream.Collector;
@@ -41,19 +41,20 @@ public class ConcurrentTrieMap<K, V> implements Map<K, V>, Iterable<Node<K, V>> 
     private volatile Object rootNode;
 
     private AtomicBoolean readOnly;
-    private AtomicInteger size;
 
     public ConcurrentTrieMap() {
         this.rootNode = new IndirectionNode<>();
         this.readOnly = new AtomicBoolean(false);
-        this.size = new AtomicInteger(0);
     }
 
-    private ConcurrentTrieMap(Object rootNode, boolean readOnly, int size) {
+    private ConcurrentTrieMap(Object rootNode, boolean readOnly) {
         this.rootNode = rootNode;
         this.readOnly = new AtomicBoolean(readOnly);
-        this.size = new AtomicInteger(size);
     }
+
+    /*
+     * Read methods.
+     */
 
     /**
      * @param key
@@ -125,6 +126,10 @@ public class ConcurrentTrieMap<K, V> implements Map<K, V>, Iterable<Node<K, V>> 
         return result;
     }
 
+    /*
+     * Write methods.
+     */
+
     /**
      * @param key
      * @param value
@@ -134,8 +139,9 @@ public class ConcurrentTrieMap<K, V> implements Map<K, V>, Iterable<Node<K, V>> 
     public V put(K key, V value) throws NullPointerException {
         Objects.requireNonNull(key);
 
-        int hashCode = key.hashCode();
-        return this.insertByHashCode(key, value, hashCode, false);
+        Either<V, Status> result = this.insert(key, value, key.hashCode(), false).invoke();
+
+        return result.isRight() ? null : result.left();
     }
 
     /**
@@ -147,8 +153,9 @@ public class ConcurrentTrieMap<K, V> implements Map<K, V>, Iterable<Node<K, V>> 
     public V putIfAbsent(K key, V value) throws NullPointerException {
         Objects.requireNonNull(key);
 
-        int hashCode = key.hashCode();
-        return this.insertByHashCode(key, value, hashCode, true);
+        Either<V, Status> result = this.insert(key, value, key.hashCode(), true).invoke();
+
+        return result.isRight() ? null : result.left();
     }
 
     /**
@@ -164,33 +171,22 @@ public class ConcurrentTrieMap<K, V> implements Map<K, V>, Iterable<Node<K, V>> 
 
     /*
      *
+     *
      * @param key
      * @param value
      * @param hashCode
      * @param onlyIfAbsent
-     * @return the value previously associated with the key, or the one that has been just inserted.
+     * @return
      */
-    private V insertByHashCode(K key, V value, int hashCode, boolean onlyIfAbsent) throws NullPointerException {
-        Objects.requireNonNull(key);
-
+    @TailRecursive
+    private TailCall<Either<V, Status>> insert(K key, V value, int hashCode, boolean onlyIfAbsent) {
         IndirectionNode<K, V> root = this.rdcssReadRoot();
-
-        Either<V, Status> result;
-        do {
-            result =
-                    root
-                            .insert(key, value, hashCode, 0, null, root.getGeneration(), onlyIfAbsent, this)
-                            .invoke();
-        } while (result.isRight() && result.right().equals(Status.RESTART));
-
-        if (result.isLeft()) {
-            V previousValue = result.left();
-            if (Objects.isNull(previousValue)) {
-                this.size.incrementAndGet();
-            }
-            return Objects.requireNonNullElse(previousValue, value);
+        Either<V, Status> result = root.insert(key, value, hashCode, onlyIfAbsent, this);
+        if (result.isRight() && result.right().equals(Status.RESTART)) {
+            return TailCalls.call(() -> this.insert(key, value, hashCode, onlyIfAbsent));
         }
-        return null;
+
+        return TailCalls.done(result.isRight() ? Either.left(null) : result);
     }
 
     /**
@@ -204,35 +200,10 @@ public class ConcurrentTrieMap<K, V> implements Map<K, V>, Iterable<Node<K, V>> 
 
         @SuppressWarnings("unchecked")
         K castedKey = (K) key;
-        int hashCode = key.hashCode();
 
-        return this.removeByHashCode(castedKey, null, hashCode);
-    }
-
-    /*
-     *
-     * @param key
-     * @param value
-     * @param hashCode
-     * @return
-     * @throws NullPointerException
-     */
-    private V removeByHashCode(K key, V value, int hashCode) throws NullPointerException {
-        Objects.requireNonNull(key);
-
+        // TODO: make it recursive, like insert().
         IndirectionNode<K, V> root = this.rdcssReadRoot();
-
-        Either<V, Status> result;
-        do {
-            result =
-                    root.remove(key, null, hashCode, 0, null, root.getGeneration(), this);
-        } while (result.isRight() && result.right().equals(Status.RESTART));
-
-        if (result.isLeft()) {
-            this.size.decrementAndGet();
-            return result.left();
-        }
-        return null;
+        return root.remove(castedKey, null, castedKey.hashCode(), this);
     }
 
     /**
@@ -240,7 +211,15 @@ public class ConcurrentTrieMap<K, V> implements Map<K, V>, Iterable<Node<K, V>> 
      */
     @Override
     public int size() {
-        return this.size.get();
+        return this.rdcssReadRoot().size();
+    }
+
+    /**
+     *
+     * @return
+     */
+    public long count() {
+        return StreamSupport.stream(this.spliterator(), false).count();
     }
 
     /**
@@ -248,7 +227,7 @@ public class ConcurrentTrieMap<K, V> implements Map<K, V>, Iterable<Node<K, V>> 
      */
     @Override
     public boolean isEmpty() {
-        return this.size.get() != 0;
+        return this.rdcssReadRoot().size() != 0;
     }
 
     /**
@@ -332,10 +311,19 @@ public class ConcurrentTrieMap<K, V> implements Map<K, V>, Iterable<Node<K, V>> 
     }
 
     /**
+     * @return
+     */
+    public ConcurrentTrieMap<K, V> snapshot() {
+        return this.recursiveSnapshot(false).invoke();
+    }
+
+
+    /**
      * @param readOnly
      * @return
      */
     public ConcurrentTrieMap<K, V> snapshot(boolean readOnly) {
+        // TODO: doesn't work with readOnly == true, why?
         return this.recursiveSnapshot(readOnly).invoke();
     }
 
@@ -350,7 +338,10 @@ public class ConcurrentTrieMap<K, V> implements Map<K, V>, Iterable<Node<K, V>> 
         MainNode<K, V> rootMainNode = root.genCaSRead(this);
 
         if (this.rdcssRoot(root, rootMainNode, root.copyToGeneration(new Generation(), this))) {
-            return TailCalls.done(new ConcurrentTrieMap<>(root, readOnly, this.size.get()));
+            return TailCalls.done(
+                    new ConcurrentTrieMap<>(
+                            readOnly ? root : root.copyToGeneration(new Generation(), this),
+                            readOnly));
         }
 
         return TailCalls.call(() -> this.recursiveSnapshot(readOnly));
@@ -360,7 +351,7 @@ public class ConcurrentTrieMap<K, V> implements Map<K, V>, Iterable<Node<K, V>> 
      * @return
      */
     @Override
-    public java.util.Iterator<Node<K, V>> iterator() {
+    public Iterator<Node<K, V>> iterator() {
         if (!this.isReadOnly()) {
             return this.snapshot(true).iterator();
         }

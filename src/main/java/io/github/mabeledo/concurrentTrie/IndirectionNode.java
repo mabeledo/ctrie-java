@@ -21,6 +21,7 @@ package io.github.mabeledo.concurrentTrie;
 
 import javax.validation.constraints.NotNull;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
 class IndirectionNode<K, V> implements Node<K, V> {
@@ -29,20 +30,24 @@ class IndirectionNode<K, V> implements Node<K, V> {
     private volatile MainNode<K, V> mainNode;
 
     private Generation generation;
+    private AtomicInteger size;
 
     IndirectionNode() {
         this.generation = new Generation();
         this.mainNode = new CNode<>(this.generation);
+        this.size = new AtomicInteger(0);
     }
 
-    IndirectionNode(Generation generation) {
+    IndirectionNode(Generation generation, int size) {
         this.generation = generation;
         this.mainNode = new CNode<>(this.generation);
+        this.size = new AtomicInteger(size);
     }
 
-    IndirectionNode(MainNode<K, V> mainNode, Generation generation) {
+    IndirectionNode(MainNode<K, V> mainNode, Generation generation, int size) {
         this.mainNode = mainNode;
         this.generation = generation;
+        this.size = new AtomicInteger(size);
     }
 
 
@@ -63,7 +68,13 @@ class IndirectionNode<K, V> implements Node<K, V> {
      * @return
      */
     @NotNull
-    Either<V, Status> lookup(K key, int hashCode, int level, IndirectionNode<K, V> parent, @NotNull Generation startGeneration, ConcurrentTrieMap<K, V> concurrentTrieMap) {
+    Either<V, Status> lookup(
+            K key,
+            int hashCode,
+            int level,
+            IndirectionNode<K, V> parent,
+            Generation startGeneration,
+            ConcurrentTrieMap<K, V> concurrentTrieMap) {
         MainNode<K, V> mainNode = this.genCaSRead(concurrentTrieMap);
 
         if (mainNode instanceof CNode) {
@@ -125,6 +136,41 @@ class IndirectionNode<K, V> implements Node<K, V> {
      * @param key
      * @param value
      * @param hashCode
+     * @param onlyIfAbsent
+     * @param concurrentTrieMap
+     * @return
+     * @throws NullPointerException
+     */
+    Either<V, Status> insert(
+            K key,
+            V value,
+            int hashCode,
+            boolean onlyIfAbsent,
+            ConcurrentTrieMap<K, V> concurrentTrieMap)
+            throws NullPointerException {
+        Objects.requireNonNull(key);
+        Objects.requireNonNull(concurrentTrieMap);
+
+        Either<V, Status> result =
+                this
+                        .insert(key, value, hashCode, 0, null, this.getGeneration(), onlyIfAbsent, concurrentTrieMap)
+                        .invoke();
+
+        if (result.isLeft()) {
+            V previousValue = result.left();
+            if (Objects.isNull(previousValue)) {
+                this.size.incrementAndGet();
+            }
+        }
+        return result;
+    }
+
+
+    /*
+     *
+     * @param key
+     * @param value
+     * @param hashCode
      * @param level
      * @param parent
      * @param startGeneration
@@ -134,13 +180,13 @@ class IndirectionNode<K, V> implements Node<K, V> {
      */
     @NotNull
     @TailRecursive
-    TailCall<Either<V, Status>> insert(
-            @NotNull K key,
+    private TailCall<Either<V, Status>> insert(
+            K key,
             V value,
             int hashCode,
             int level,
             IndirectionNode<K, V> parent,
-            @NotNull Generation startGeneration,
+            Generation startGeneration,
             boolean onlyIfAbsent,
             ConcurrentTrieMap<K, V> concurrentTrieMap) {
 
@@ -169,6 +215,7 @@ class IndirectionNode<K, V> implements Node<K, V> {
                     }
                 } else if (node instanceof SingletonNode) {
                     SingletonNode<K, V> singletonNode = (SingletonNode<K, V>) node;
+
                     if (Objects.equals(singletonNode.getKey(), key) && (singletonNode.getHashCode() == hashCode)) {
                         if (this.genCaS(cNode, cNode.updateAt(pos, new SingletonNode<>(key, value, hashCode), this.generation), concurrentTrieMap)) {
                             return TailCalls.done(Either.left(singletonNode.getValue()));
@@ -192,7 +239,8 @@ class IndirectionNode<K, V> implements Node<K, V> {
                                                         hashCode,
                                                         level + 5,
                                                         this.generation),
-                                                this.generation),
+                                                this.generation,
+                                                2),
                                         this.generation);
                         if (this.genCaS(cNode, updatedRenewedNode, concurrentTrieMap)) {
                             return TailCalls.done(Either.left(null));
@@ -213,14 +261,11 @@ class IndirectionNode<K, V> implements Node<K, V> {
                         concurrentTrieMap)) {
                     return TailCalls.done(Either.left(null));
                 }
-
-                return TailCalls.done(Either.right(Status.RESTART));
             }
 
         } else if (mainNode instanceof TombNode) {
             //
             this.clean(parent, concurrentTrieMap, level - 5);
-            return TailCalls.done(Either.right(Status.RESTART));
         } else if (mainNode instanceof LeafNode) {
             //
             LeafNode<K, V> leafNode = (LeafNode<K, V>) mainNode;
@@ -228,10 +273,9 @@ class IndirectionNode<K, V> implements Node<K, V> {
 
             if (this.genCaS(leafNode, updatedLeafNode, concurrentTrieMap)) {
                 Either<V, Status> previousValue = leafNode.get(key);
-                return TailCalls.done(previousValue.isLeft() ? previousValue : Either.left(null));
+                return TailCalls.done(
+                        previousValue.isLeft() ? previousValue : Either.left(null));
             }
-
-            return TailCalls.done(Either.right(Status.RESTART));
         }
 
         // Try again by default, although it should never reach this point.
@@ -239,6 +283,35 @@ class IndirectionNode<K, V> implements Node<K, V> {
     }
 
     /**
+     * @param key
+     * @param value
+     * @param hashCode
+     * @param concurrentTrieMap
+     * @return
+     * @throws NullPointerException
+     */
+    V remove(
+            K key,
+            V value,
+            int hashCode,
+            ConcurrentTrieMap<K, V> concurrentTrieMap) throws NullPointerException {
+        Objects.requireNonNull(key);
+        Objects.requireNonNull(concurrentTrieMap);
+
+        Either<V, Status> result;
+        do {
+            result =
+                    this.remove(key, value, hashCode, 0, null, this.getGeneration(), concurrentTrieMap);
+        } while (result.isRight() && result.right().equals(Status.RESTART));
+
+        if (result.isLeft()) {
+            this.size.decrementAndGet();
+            return result.left();
+        }
+        return null;
+    }
+
+    /*
      * Not quite tail recursive at all, btw, but lazy evaluation always helps a little.
      *
      * @param key
@@ -251,7 +324,14 @@ class IndirectionNode<K, V> implements Node<K, V> {
      * @return an Either containing the status of the operation, or the removed value.
      */
     @NotNull
-    Either<V, Status> remove(@NotNull K key, V value, int hashCode, int level, IndirectionNode<K, V> parent, @NotNull Generation startGeneration, ConcurrentTrieMap<K, V> concurrentTrieMap) {
+    private Either<V, Status> remove(
+            K key,
+            V value,
+            int hashCode,
+            int level,
+            IndirectionNode<K, V> parent,
+            Generation startGeneration,
+            ConcurrentTrieMap<K, V> concurrentTrieMap) {
         MainNode<K, V> mainNode = this.genCaSRead(concurrentTrieMap);
 
         if (mainNode instanceof CNode) {
@@ -360,12 +440,19 @@ class IndirectionNode<K, V> implements Node<K, V> {
     }
 
     /**
+     * @return
+     */
+    int size() {
+        return this.size.get();
+    }
+
+    /**
      * Get the current main node of this IndirectionNode.
      *
      * @param concurrentTrieMap the current ConcurrentTrieMap structure where this IndirectionNode lives.
      * @return the current main node of this IndirectionNode.
      */
-    MainNode<K, V> genCaSRead(@NotNull ConcurrentTrieMap<K, V> concurrentTrieMap) {
+    MainNode<K, V> genCaSRead(ConcurrentTrieMap<K, V> concurrentTrieMap) {
         @SuppressWarnings("unchecked")
         MainNode<K, V> mainNode = (MainNode<K, V>) IndirectionNode.MAIN_NODE_UPDATER.get(this);
         MainNode<K, V> previousMainNode = mainNode.readPrevious();
@@ -374,7 +461,7 @@ class IndirectionNode<K, V> implements Node<K, V> {
             return mainNode;
         }
 
-        return this.genCaSCommit(mainNode, concurrentTrieMap);
+        return this.genCaSCommit(mainNode, concurrentTrieMap).invoke();
     }
 
     /*
@@ -386,37 +473,38 @@ class IndirectionNode<K, V> implements Node<K, V> {
      * @param concurrentTrieMap the current ConcurrentTrieMap structure where this IndirectionNode lives.
      * @return the committed node.
      */
-    private MainNode<K, V> genCaSCommit(MainNode<K, V> node, @NotNull ConcurrentTrieMap<K, V> concurrentTrieMap) {
+    @TailRecursive
+    private TailCall<MainNode<K, V>> genCaSCommit(MainNode<K, V> node, ConcurrentTrieMap<K, V> concurrentTrieMap) {
         if (Objects.isNull(node)) {
-            return null;
+            return TailCalls.done(null);
         }
 
         MainNode<K, V> previousNode = node.readPrevious();
         IndirectionNode<K, V> cTrieRoot = concurrentTrieMap.rdcssReadRoot(true);
 
         if (Objects.isNull(previousNode)) {
-            return node;
+            return TailCalls.done(node);
         } else if (previousNode instanceof FailedNode) {
             FailedNode<K, V> failedNode = (FailedNode<K, V>) previousNode;
             if (IndirectionNode.MAIN_NODE_UPDATER.compareAndSet(this, node, failedNode.readPrevious())) {
-                return failedNode.readPrevious();
+                return TailCalls.done(failedNode.readPrevious());
             } else {
                 @SuppressWarnings("unchecked")
                 MainNode<K, V> mainNode = (MainNode<K, V>) IndirectionNode.MAIN_NODE_UPDATER.get(this);
-                return this.genCaSCommit(mainNode, concurrentTrieMap);
+                return TailCalls.call(() -> this.genCaSCommit(mainNode, concurrentTrieMap));
             }
         } else {
             if (Objects.equals(cTrieRoot.generation, this.generation) && !concurrentTrieMap.isReadOnly()) {
                 return
                         node.casPrevious(previousNode, null) ?
-                                node :
-                                this.genCaSCommit(node, concurrentTrieMap);
+                                TailCalls.done(node) :
+                                TailCalls.call(() -> this.genCaSCommit(node, concurrentTrieMap));
             } else {
                 node.casPrevious(previousNode, new FailedNode<>(previousNode));
 
                 @SuppressWarnings("unchecked")
                 MainNode<K, V> mainNode = (MainNode<K, V>) IndirectionNode.MAIN_NODE_UPDATER.get(this);
-                return this.genCaSCommit(mainNode, concurrentTrieMap);
+                return TailCalls.call(() -> this.genCaSCommit(mainNode, concurrentTrieMap));
             }
         }
     }
@@ -434,7 +522,7 @@ class IndirectionNode<K, V> implements Node<K, V> {
         newNode.writePrevious(oldNode);
 
         if (IndirectionNode.MAIN_NODE_UPDATER.compareAndSet(this, oldNode, newNode)) {
-            this.genCaSCommit(newNode, concurrentTrieMap);
+            this.genCaSCommit(newNode, concurrentTrieMap).invoke();
             return Objects.isNull(newNode.readPrevious());
         }
         return false;
@@ -448,7 +536,7 @@ class IndirectionNode<K, V> implements Node<K, V> {
      * @return the newly copied IndirectionNode.
      */
     IndirectionNode<K, V> copyToGeneration(Generation generation, ConcurrentTrieMap<K, V> concurrentTrieMap) {
-        IndirectionNode<K, V> newIndirectionNode = new IndirectionNode<>(generation);
+        IndirectionNode<K, V> newIndirectionNode = new IndirectionNode<>(generation, this.size.get());
         MainNode<K, V> mainNode = this.genCaSRead(concurrentTrieMap);
 
         IndirectionNode.MAIN_NODE_UPDATER.set(newIndirectionNode, mainNode);
@@ -481,7 +569,7 @@ class IndirectionNode<K, V> implements Node<K, V> {
      * @param concurrentTrieMap
      */
     @TailRecursive
-    private TailCall<Void> cleanParent(int hashCode, int level, Object nonLiveNode, IndirectionNode<K, V> parent, @NotNull Generation startGeneration, ConcurrentTrieMap<K, V> concurrentTrieMap) {
+    private TailCall<Void> cleanParent(int hashCode, int level, Object nonLiveNode, IndirectionNode<K, V> parent, Generation startGeneration, ConcurrentTrieMap<K, V> concurrentTrieMap) {
         MainNode<K, V> parentMainNode = parent.genCaSRead(concurrentTrieMap);
 
         if (parentMainNode instanceof CNode) {
@@ -509,7 +597,7 @@ class IndirectionNode<K, V> implements Node<K, V> {
 
                     if (!parent.genCaS(cNode, updatedCNode, concurrentTrieMap)) {
                         if (Objects.equals(concurrentTrieMap.rdcssReadRoot().getGeneration(), startGeneration)) {
-                            TailCalls.call(() ->
+                            return TailCalls.call(() ->
                                     this.cleanParent(hashCode, level, nonLiveNode, parent, startGeneration, concurrentTrieMap));
                         }
                     }

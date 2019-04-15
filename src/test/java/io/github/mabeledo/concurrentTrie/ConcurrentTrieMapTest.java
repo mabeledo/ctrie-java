@@ -27,12 +27,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.StreamSupport;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ConcurrentTrieMapTest {
@@ -44,9 +46,7 @@ class ConcurrentTrieMapTest {
 
         keyValueList.forEach(p -> concurrentTrieMap.put(p.getKey(), p.getValue()));
 
-        final long cTrieSize = StreamSupport.stream(concurrentTrieMap.spliterator(), false).count();
-
-        assertEquals(cTrieSize, concurrentTrieMap.size());
+        assertEquals(concurrentTrieMap.count(), concurrentTrieMap.size());
         assertEquals(keyValueMap.size(), concurrentTrieMap.size());
 
         List<Map.Entry<String, Long>> diffFromKeyValueMap =
@@ -108,9 +108,7 @@ class ConcurrentTrieMapTest {
         final Set<String> keySet =
                 keyValueList.stream().map(AbstractMap.SimpleEntry::getKey).collect(Collectors.toSet());
 
-        final long cTrieSize = StreamSupport.stream(concurrentTrieMap.spliterator(), false).count();
-
-        assertEquals(cTrieSize, concurrentTrieMap.size());
+        assertEquals(concurrentTrieMap.count(), concurrentTrieMap.size());
         assertEquals(keySet.size(), concurrentTrieMap.size());
 
         List<String> diff =
@@ -135,9 +133,7 @@ class ConcurrentTrieMapTest {
         updatedKeyValueList.forEach(p -> keyValueMap.remove(p.getKey()));
         updatedKeyValueList.forEach(p -> concurrentTrieMap.remove(p.getKey()));
 
-        final long cTrieSize = StreamSupport.stream(concurrentTrieMap.spliterator(), false).count();
-
-        assertEquals(cTrieSize, concurrentTrieMap.size());
+        assertEquals(concurrentTrieMap.count(), concurrentTrieMap.size());
         assertEquals(keyValueMap.size(), concurrentTrieMap.size());
 
         List<Map.Entry<String, Long>> diffFromKeyValueMap =
@@ -160,16 +156,39 @@ class ConcurrentTrieMapTest {
     }
 
     @Test
-    void snapshots() {
-        List<Map.Entry<String, Long>> keyValueList = this.generateKeyValueList(10_000_001);
-        Map<String, Long> keyValueMap = this.generateKeyValueMap(keyValueList);
-        ConcurrentTrieMap<String, Long> concurrentTrieMap = this.generateConcurrentTrieMap(keyValueList);
+    void snapshot() {
+        Map<String, Long> originalKeyValueMap = this.generateKeyValueMap(10_000_001);
 
-        // Create two snapshots and update both, then compare.
-        ConcurrentTrieMap<String, Long> firstSnapshot = concurrentTrieMap.snapshot(false);
-        ConcurrentTrieMap<String, Long> secondSnapshot = concurrentTrieMap.snapshot(false);
+        Map<String, Long> firstKeyValueMap =
+                originalKeyValueMap.entrySet().stream()
+                        .limit(originalKeyValueMap.size() / 2)
+                        .collect(Collectors.toMap(
+                                Map.Entry::getKey,
+                                Map.Entry::getValue));
+        Map<String, Long> secondKeyValueMap =
+                originalKeyValueMap.entrySet().stream()
+                        .skip(originalKeyValueMap.size() / 2)
+                        .collect(Collectors.toMap(
+                                Map.Entry::getKey,
+                                Map.Entry::getValue));
 
+        ConcurrentTrieMap<String, Long> concurrentTrieMap = this.generateConcurrentTrieMap(firstKeyValueMap);
 
+        // Create snapshot and update, then compare.
+        ConcurrentTrieMap<String, Long> snapshot = concurrentTrieMap.snapshot();
+        snapshot.putAll(secondKeyValueMap);
+
+        assertNotEquals(concurrentTrieMap.size(), snapshot.size());
+        assertEquals(
+                concurrentTrieMap.size(),
+                snapshot.stream()
+                        .filter(p -> Objects.nonNull(concurrentTrieMap.get(p.getKey())))
+                        .count());
+
+        assertTrue(
+                concurrentTrieMap.stream()
+                        .allMatch(p ->
+                                snapshot.get(p.getKey()).equals(p.getValue())));
     }
 
     @Test
@@ -179,7 +198,7 @@ class ConcurrentTrieMapTest {
 
     @Test
     void collector() {
-        
+
     }
 
     private List<Map.Entry<String, Long>> generateKeyValueList(int size) {
@@ -194,12 +213,36 @@ class ConcurrentTrieMapTest {
     private Map<String, Long> generateKeyValueMap(List<Map.Entry<String, Long>> keyValueList) {
         return keyValueList.stream()
                 .collect(Collectors.toMap(
-                        Map.Entry::getKey, Map.Entry::getValue, (p, q) -> q));
+                        Map.Entry::getKey,
+                        Map.Entry::getValue,
+                        (p, q) -> q,
+                        TreeMap::new));
     }
 
-    private ConcurrentTrieMap<String, Long> generateConcurrentTrieMap(List<Map.Entry<String, Long>> keyValueList) {
+    private Map<String, Long> generateKeyValueMap(int size) {
+        return IntStream.range(1, size)
+                .mapToObj(p ->
+                        new AbstractMap.SimpleEntry<>(
+                                "entry-" + ThreadLocalRandom.current().nextInt(p),
+                                ThreadLocalRandom.current().nextLong()))
+                .collect(Collectors.toMap(
+                        AbstractMap.SimpleEntry::getKey,
+                        AbstractMap.SimpleEntry::getValue,
+                        (p, q) -> q,
+                        TreeMap::new
+                ));
+    }
+
+    private ConcurrentTrieMap<String, Long> generateConcurrentTrieMap(List<Map.Entry<String, Long>> list) {
         ConcurrentTrieMap<String, Long> concurrentTrieMap = new ConcurrentTrieMap<>();
-        keyValueList.forEach(p -> concurrentTrieMap.put(p.getKey(), p.getValue()));
+        list.forEach(p -> concurrentTrieMap.put(p.getKey(), p.getValue()));
+
+        return concurrentTrieMap;
+    }
+
+    private ConcurrentTrieMap<String, Long> generateConcurrentTrieMap(Map<String, Long> map) {
+        ConcurrentTrieMap<String, Long> concurrentTrieMap = new ConcurrentTrieMap<>();
+        concurrentTrieMap.putAll(map);
 
         return concurrentTrieMap;
     }

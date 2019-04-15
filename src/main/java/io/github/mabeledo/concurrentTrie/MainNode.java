@@ -76,7 +76,8 @@ abstract class MainNode<K, V> implements Node<K, V> {
                 IndirectionNode<K, V> subIndirectionNode =
                         new IndirectionNode<>(
                                 dual(leftNode, leftHashCode, rightNode, rightHashCode, level + 5, generation),
-                                generation);
+                                generation,
+                                2);
                 @SuppressWarnings("unchecked")
                 CNode<K, V> cNode = new CNode<K, V>(bitmap, new Node[]{subIndirectionNode}, generation);
                 return cNode;
